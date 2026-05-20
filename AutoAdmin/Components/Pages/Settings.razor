@@ -1,0 +1,173 @@
+@page "/settings"
+@layout AppLayout
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+@using System.Security.Claims
+
+@inject AuthenticationStateProvider AuthStateProvider
+@inject CurrentBusinessService CurrentBusinessService
+@inject BusinessService BusinessService
+@inject NavigationManager Navigation
+
+<PageTitle>Settings - AutoAdmin</PageTitle>
+
+<PageHeader
+    Kicker="Workspace"
+    Title="Settings"
+    Description="Atur identitas bisnis, format invoice, dan kontak yang tampil di operasional AutoAdmin." />
+
+@if (!string.IsNullOrWhiteSpace(SuccessMessage))
+{
+    <div class="aa-success" role="status">@SuccessMessage</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(ErrorMessage))
+{
+    <div class="aa-alert" role="alert">@ErrorMessage</div>
+}
+
+@if (IsLoading)
+{
+    <EmptyState Title="Loading settings..." Message="AutoAdmin sedang membuka konfigurasi workspace." />
+}
+else
+{
+    <EditForm Model="Form" OnValidSubmit="SaveSettings">
+        <DataAnnotationsValidator />
+
+        <section class="aa-split-layout">
+            <article class="aa-panel">
+                <div class="aa-panel-header">
+                    <span>Business profile</span>
+                    <h2>Identity</h2>
+                </div>
+
+                <div class="aa-form-group">
+                    <label for="business-name">Business name</label>
+                    <InputText id="business-name" class="aa-input" @bind-Value="Form.Name" />
+                    <ValidationMessage For="() => Form.Name" />
+                </div>
+
+                <div class="aa-form-group">
+                    <label for="business-industry">Industry</label>
+                    <InputText id="business-industry" class="aa-input" @bind-Value="Form.Industry" />
+                    <ValidationMessage For="() => Form.Industry" />
+                </div>
+
+                <div class="aa-form-group">
+                    <label for="business-address">Address</label>
+                    <InputTextArea id="business-address" class="aa-input aa-textarea" @bind-Value="Form.Address" />
+                    <ValidationMessage For="() => Form.Address" />
+                </div>
+            </article>
+
+            <article class="aa-panel">
+                <div class="aa-panel-header">
+                    <span>Invoice defaults</span>
+                    <h2>Billing setup</h2>
+                </div>
+
+                <div class="aa-form-grid">
+                    <div class="aa-form-group">
+                        <label for="business-currency">Currency</label>
+                        <InputText id="business-currency" class="aa-input" @bind-Value="Form.Currency" />
+                        <ValidationMessage For="() => Form.Currency" />
+                    </div>
+
+                    <div class="aa-form-group">
+                        <label for="invoice-prefix">Invoice prefix</label>
+                        <InputText id="invoice-prefix" class="aa-input" @bind-Value="Form.InvoicePrefix" />
+                        <ValidationMessage For="() => Form.InvoicePrefix" />
+                    </div>
+                </div>
+
+                <div class="aa-form-grid">
+                    <div class="aa-form-group">
+                        <label for="business-email">Email</label>
+                        <InputText id="business-email" class="aa-input" @bind-Value="Form.Email" />
+                        <ValidationMessage For="() => Form.Email" />
+                    </div>
+
+                    <div class="aa-form-group">
+                        <label for="business-phone">Phone</label>
+                        <InputText id="business-phone" class="aa-input" @bind-Value="Form.Phone" />
+                        <ValidationMessage For="() => Form.Phone" />
+                    </div>
+                </div>
+
+                <div class="aa-form-group">
+                    <label for="business-whatsapp">WhatsApp number</label>
+                    <InputText id="business-whatsapp" class="aa-input" @bind-Value="Form.WhatsAppNumber" />
+                    <ValidationMessage For="() => Form.WhatsAppNumber" />
+                </div>
+
+                <button class="aa-btn aa-btn-primary aa-btn-full" type="submit">Save settings</button>
+            </article>
+        </section>
+    </EditForm>
+}
+
+@code {
+    private string? UserId { get; set; }
+    private Guid? BusinessId { get; set; }
+    private BusinessSettingsFormModel Form { get; set; } = new();
+    private string? SuccessMessage { get; set; }
+    private string? ErrorMessage { get; set; }
+    private bool IsLoading { get; set; } = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        UserId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrWhiteSpace(UserId))
+        {
+            Navigation.NavigateTo("/login", forceLoad: true);
+            return;
+        }
+
+        BusinessId = await CurrentBusinessService.GetFirstBusinessIdForUserAsync(UserId);
+
+        if (BusinessId is null)
+        {
+            Navigation.NavigateTo("/dashboard", forceLoad: true);
+            return;
+        }
+
+        var settings = await BusinessService.GetBusinessSettingsAsync(UserId, BusinessId.Value);
+
+        if (settings is null)
+        {
+            ErrorMessage = "Workspace tidak ditemukan.";
+        }
+        else
+        {
+            Form = settings;
+        }
+
+        IsLoading = false;
+    }
+
+    private async Task SaveSettings()
+    {
+        if (string.IsNullOrWhiteSpace(UserId) || BusinessId is null)
+        {
+            ErrorMessage = "Business workspace tidak ditemukan.";
+            return;
+        }
+
+        SuccessMessage = null;
+        ErrorMessage = null;
+
+        var saved = await BusinessService.UpdateBusinessSettingsAsync(UserId, BusinessId.Value, Form);
+
+        if (!saved)
+        {
+            ErrorMessage = "Gagal menyimpan settings.";
+            return;
+        }
+
+        SuccessMessage = "Settings berhasil disimpan.";
+    }
+}

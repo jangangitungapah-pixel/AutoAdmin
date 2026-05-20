@@ -1,0 +1,18 @@
+<header class="aa-workspace-bar">
+    <div>
+        <span>Workspace</span>
+        <strong>@BusinessName</strong>
+    </div>
+
+    <div class="aa-user-pill">
+        @UserEmail
+    </div>
+</header>
+
+@code {
+    [Parameter]
+    public string BusinessName { get; set; } = "AutoAdmin";
+
+    [Parameter]
+    public string UserEmail { get; set; } = string.Empty;
+}

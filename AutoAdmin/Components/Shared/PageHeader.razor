@@ -1,0 +1,36 @@
+<header class="aa-page-header">
+    <div>
+        @if (!string.IsNullOrWhiteSpace(Kicker))
+        {
+            <span>@Kicker</span>
+        }
+
+        <h1>@Title</h1>
+
+        @if (!string.IsNullOrWhiteSpace(Description))
+        {
+            <p>@Description</p>
+        }
+    </div>
+
+    @if (Actions is not null)
+    {
+        <div class="aa-page-actions">
+            @Actions
+        </div>
+    }
+</header>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Kicker { get; set; }
+
+    [Parameter]
+    public string? Description { get; set; }
+
+    [Parameter]
+    public RenderFragment? Actions { get; set; }
+}

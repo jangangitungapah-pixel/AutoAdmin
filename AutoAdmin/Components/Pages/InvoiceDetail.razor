@@ -1,0 +1,213 @@
+@page "/invoices/{InvoiceId:guid}"
+@layout AppLayout
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+@using System.Security.Claims
+
+@inject AuthenticationStateProvider AuthStateProvider
+@inject CurrentBusinessService CurrentBusinessService
+@inject InvoiceService InvoiceService
+@inject NavigationManager Navigation
+
+<PageTitle>Invoice detail - AutoAdmin</PageTitle>
+
+@if (IsLoading)
+{
+    <EmptyState Title="Loading invoice..." Message="AutoAdmin sedang membuka invoice." />
+}
+else if (Invoice is null)
+{
+    <EmptyState Title="Invoice tidak ditemukan" Message="Invoice mungkin sudah dihapus atau bukan milik workspace ini.">
+        <Actions>
+            <a class="aa-btn aa-btn-primary" href="/invoices">Back to invoices</a>
+        </Actions>
+    </EmptyState>
+}
+else
+{
+    <PageHeader
+        Kicker="Invoice detail"
+        Title="@Invoice.InvoiceNumber"
+        Description="@($"{Invoice.Client?.Name ?? "No client"} - due {Invoice.DueDate:dd MMM yyyy}")">
+        <Actions>
+            <a class="aa-btn aa-btn-secondary" href="/invoices">Back</a>
+            @if (Invoice.Status != InvoiceStatus.Paid && Invoice.Status != InvoiceStatus.Cancelled)
+            {
+                <button class="aa-btn aa-btn-primary" type="button" @onclick="MarkPaid">Mark paid</button>
+            }
+        </Actions>
+    </PageHeader>
+
+    @if (!string.IsNullOrWhiteSpace(SuccessMessage))
+    {
+        <div class="aa-success" role="status">@SuccessMessage</div>
+    }
+
+    <section class="aa-split-layout">
+        <article class="aa-panel">
+            <div class="aa-panel-header aa-panel-header-split">
+                <div>
+                    <span>Status</span>
+                    <h2>Payment state</h2>
+                </div>
+                <StatusBadge Text="@GetStatusLabel(Invoice.Status)" Tone="@GetStatusTone(Invoice.Status)" />
+            </div>
+
+            <dl class="aa-detail-list">
+                <div>
+                    <dt>Client</dt>
+                    <dd>@(Invoice.Client?.Name ?? "-")</dd>
+                </div>
+                <div>
+                    <dt>Issue date</dt>
+                    <dd>@Invoice.IssueDate.ToString("dd MMM yyyy")</dd>
+                </div>
+                <div>
+                    <dt>Due date</dt>
+                    <dd>@Invoice.DueDate.ToString("dd MMM yyyy")</dd>
+                </div>
+                <div>
+                    <dt>Notes</dt>
+                    <dd>@(Invoice.Notes ?? "-")</dd>
+                </div>
+            </dl>
+        </article>
+
+        <article class="aa-panel">
+            <div class="aa-panel-header">
+                <span>Items</span>
+                <h2>Invoice breakdown</h2>
+            </div>
+
+            <div class="aa-table-wrap">
+                <table class="aa-table">
+                    <thead>
+                        <tr>
+                            <th>Description</th>
+                            <th>Qty</th>
+                            <th>Price</th>
+                            <th>Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in Invoice.Items)
+                        {
+                            <tr>
+                                <td><strong>@item.Description</strong></td>
+                                <td>@item.Quantity.ToString("N2")</td>
+                                <td>@Money(item.UnitPrice)</td>
+                                <td><strong>@Money(item.Total)</strong></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="aa-totals aa-totals-compact">
+                <div>
+                    <span>Subtotal</span>
+                    <strong>@Money(Invoice.Subtotal)</strong>
+                </div>
+                <div>
+                    <span>Discount</span>
+                    <strong>@Money(Invoice.Discount)</strong>
+                </div>
+                <div>
+                    <span>Tax</span>
+                    <strong>@Money(Invoice.Tax)</strong>
+                </div>
+                <div class="aa-total-row">
+                    <span>Total</span>
+                    <strong>@Money(Invoice.Total)</strong>
+                </div>
+            </div>
+        </article>
+    </section>
+}
+
+@code {
+    [Parameter]
+    public Guid InvoiceId { get; set; }
+
+    private Guid? BusinessId { get; set; }
+    private Invoice? Invoice { get; set; }
+    private bool IsLoading { get; set; } = true;
+    private string? SuccessMessage { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            Navigation.NavigateTo("/login", forceLoad: true);
+            return;
+        }
+
+        BusinessId = await CurrentBusinessService.GetFirstBusinessIdForUserAsync(userId);
+
+        if (BusinessId is null)
+        {
+            Navigation.NavigateTo("/dashboard", forceLoad: true);
+            return;
+        }
+
+        await LoadInvoice();
+    }
+
+    private async Task LoadInvoice()
+    {
+        if (BusinessId is null)
+        {
+            return;
+        }
+
+        IsLoading = true;
+        Invoice = await InvoiceService.GetInvoiceDetailAsync(BusinessId.Value, InvoiceId);
+        IsLoading = false;
+    }
+
+    private async Task MarkPaid()
+    {
+        if (BusinessId is null)
+        {
+            return;
+        }
+
+        await InvoiceService.MarkAsPaidAsync(BusinessId.Value, InvoiceId);
+        SuccessMessage = "Invoice ditandai lunas.";
+        await LoadInvoice();
+    }
+
+    private static string Money(decimal value)
+    {
+        return $"Rp {value:N0}";
+    }
+
+    private static string GetStatusLabel(InvoiceStatus status)
+    {
+        return status switch
+        {
+            InvoiceStatus.Draft => "Draft",
+            InvoiceStatus.Sent => "Sent",
+            InvoiceStatus.Paid => "Paid",
+            InvoiceStatus.Overdue => "Overdue",
+            InvoiceStatus.Cancelled => "Cancelled",
+            _ => status.ToString()
+        };
+    }
+
+    private static string GetStatusTone(InvoiceStatus status)
+    {
+        return status switch
+        {
+            InvoiceStatus.Paid => "success",
+            InvoiceStatus.Sent => "info",
+            InvoiceStatus.Overdue => "danger",
+            InvoiceStatus.Cancelled => "neutral",
+            _ => "warning"
+        };
+    }
+}

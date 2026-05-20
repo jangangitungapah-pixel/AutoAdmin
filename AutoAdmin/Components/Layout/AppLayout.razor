@@ -1,0 +1,59 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+
+@inject AuthenticationStateProvider AuthStateProvider
+@inject CurrentBusinessService CurrentBusinessService
+@inject NavigationManager Navigation
+
+<main class="aa-app">
+    <AppSidebar CurrentPath="@CurrentPath" />
+
+    <section class="aa-main">
+        <AppTopbar BusinessName="@BusinessName" UserEmail="@UserEmail" />
+        @Body
+    </section>
+</main>
+
+@code {
+    private string BusinessName { get; set; } = "AutoAdmin";
+    private string UserEmail { get; set; } = string.Empty;
+
+    private string CurrentPath
+    {
+        get
+        {
+            var path = Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].TrimEnd('/');
+            return string.IsNullOrWhiteSpace(path) ? "/" : $"/{path}";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += HandleLocationChanged;
+
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        UserEmail = user.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+            ?? user.Identity?.Name
+            ?? "Signed in";
+
+        var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            var business = await CurrentBusinessService.GetFirstBusinessForUserAsync(userId);
+            BusinessName = business?.Name ?? "AutoAdmin";
+        }
+    }
+
+    private void HandleLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= HandleLocationChanged;
+    }
+}

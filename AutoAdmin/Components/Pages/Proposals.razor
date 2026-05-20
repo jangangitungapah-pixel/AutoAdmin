@@ -1,0 +1,340 @@
+@page "/proposals"
+@layout AppLayout
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+@using System.Security.Claims
+
+@inject AuthenticationStateProvider AuthStateProvider
+@inject CurrentBusinessService CurrentBusinessService
+@inject ClientService ClientService
+@inject ProposalService ProposalService
+@inject NavigationManager Navigation
+
+<PageTitle>Proposals - AutoAdmin</PageTitle>
+
+<PageHeader
+    Kicker="Sales pipeline"
+    Title="Proposals"
+    Description="Buat proposal cepat, simpan scope kerja, dan pantau status sampai converted.">
+    <Actions>
+        <button class="aa-btn aa-btn-primary" type="button" @onclick="OpenCreateForm">New proposal</button>
+    </Actions>
+</PageHeader>
+
+<section class="aa-dashboard-grid aa-dashboard-grid-compact">
+    <StatCard Label="Active proposals" Value="@Summary.Active.ToString("N0")" Hint="Draft dan sent" />
+    <StatCard Label="Sent" Value="@Summary.Sent.ToString("N0")" Hint="Menunggu respon" />
+    <StatCard Label="Accepted" Value="@Summary.Accepted.ToString("N0")" Hint="Siap invoice" />
+    <StatCard Label="Pipeline value" Value="@Money(Summary.Value)" Hint="Estimasi proposal aktif" />
+</section>
+
+@if (!string.IsNullOrWhiteSpace(SuccessMessage))
+{
+    <div class="aa-success" role="status">@SuccessMessage</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(ErrorMessage))
+{
+    <div class="aa-alert" role="alert">@ErrorMessage</div>
+}
+
+<section class="aa-client-layout">
+    <article class="aa-panel">
+        <div class="aa-panel-header aa-panel-header-split">
+            <div>
+                <span>Proposal list</span>
+                <h2>Recent proposals</h2>
+            </div>
+            <button class="aa-icon-btn" type="button" @onclick="LoadProposals">Refresh</button>
+        </div>
+
+        @if (IsLoading)
+        {
+            <EmptyState Title="Loading proposals..." Message="AutoAdmin sedang membaca proposal." />
+        }
+        else if (ProposalList.Count == 0)
+        {
+            <EmptyState Title="Belum ada proposal" Message="Buat proposal pertama untuk melacak peluang project.">
+                <Actions>
+                    <button class="aa-btn aa-btn-primary" type="button" @onclick="OpenCreateForm">Create proposal</button>
+                </Actions>
+            </EmptyState>
+        }
+        else
+        {
+            <div class="aa-card-list">
+                @foreach (var proposal in ProposalList)
+                {
+                    <article class="aa-record-card">
+                        <div class="aa-record-main">
+                            <div>
+                                <h3>@proposal.Title</h3>
+                                <p>@(proposal.Summary ?? "No summary")</p>
+                            </div>
+                            <StatusBadge Text="@GetStatusLabel(proposal.Status)" Tone="@GetStatusTone(proposal.Status)" />
+                        </div>
+
+                        <div class="aa-record-meta">
+                            <span>@(proposal.Client?.Name ?? "No client")</span>
+                            <span>@Money(proposal.EstimatedPrice)</span>
+                            <span>@(proposal.ValidUntil is null ? "No expiry" : $"Valid until {proposal.ValidUntil:dd MMM yyyy}")</span>
+                        </div>
+
+                        <div class="aa-row-actions aa-row-actions-left">
+                            @if (proposal.Status != ProposalStatus.Accepted)
+                            {
+                                <button class="aa-icon-btn success" type="button" @onclick="() => UpdateStatus(proposal.Id, ProposalStatus.Accepted)">Accept</button>
+                            }
+                            @if (proposal.Status != ProposalStatus.Rejected)
+                            {
+                                <button class="aa-icon-btn danger" type="button" @onclick="() => UpdateStatus(proposal.Id, ProposalStatus.Rejected)">Reject</button>
+                            }
+                            @if (proposal.Status != ProposalStatus.ConvertedToInvoice)
+                            {
+                                <button class="aa-icon-btn" type="button" @onclick="() => UpdateStatus(proposal.Id, ProposalStatus.ConvertedToInvoice)">Converted</button>
+                            }
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </article>
+
+    @if (ShowForm)
+    {
+        <article class="aa-panel aa-form-panel">
+            <div class="aa-panel-header aa-panel-header-split">
+                <div>
+                    <span>New proposal</span>
+                    <h2>Proposal builder</h2>
+                </div>
+                <button class="aa-icon-btn" type="button" @onclick="CloseForm">Close</button>
+            </div>
+
+            <EditForm Model="Form" OnValidSubmit="SaveProposal">
+                <DataAnnotationsValidator />
+
+                <div class="aa-form-group">
+                    <label for="proposal-client">Client</label>
+                    <select id="proposal-client" class="aa-input" @bind="Form.ClientId">
+                        <option value="">No client</option>
+                        @foreach (var client in Clients)
+                        {
+                            <option value="@client.Id">@client.Name</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="aa-form-group">
+                    <label for="proposal-title">Title</label>
+                    <InputText id="proposal-title" class="aa-input" @bind-Value="Form.Title" />
+                    <ValidationMessage For="() => Form.Title" />
+                </div>
+
+                <div class="aa-form-grid">
+                    <div class="aa-form-group">
+                        <label for="proposal-price">Estimated price</label>
+                        <InputNumber id="proposal-price" class="aa-input" @bind-Value="Form.EstimatedPrice" />
+                        <ValidationMessage For="() => Form.EstimatedPrice" />
+                    </div>
+
+                    <div class="aa-form-group">
+                        <label for="proposal-status">Status</label>
+                        <InputSelect id="proposal-status" class="aa-input" @bind-Value="Form.Status">
+                            @foreach (var status in Enum.GetValues<ProposalStatus>())
+                            {
+                                <option value="@status">@GetStatusLabel(status)</option>
+                            }
+                        </InputSelect>
+                    </div>
+                </div>
+
+                <div class="aa-form-group">
+                    <label for="valid-until">Valid until</label>
+                    <InputDate id="valid-until" class="aa-input" @bind-Value="Form.ValidUntil" />
+                </div>
+
+                <div class="aa-form-group">
+                    <div class="aa-label-row">
+                        <label for="proposal-summary">Summary</label>
+                        <button class="aa-link-button" type="button" @onclick="GenerateSummary">Generate draft</button>
+                    </div>
+                    <InputTextArea id="proposal-summary" class="aa-input aa-textarea" @bind-Value="Form.Summary" />
+                    <ValidationMessage For="() => Form.Summary" />
+                </div>
+
+                <div class="aa-form-group">
+                    <label for="proposal-scope">Scope of work</label>
+                    <InputTextArea id="proposal-scope" class="aa-input aa-textarea" @bind-Value="Form.ScopeOfWork" />
+                    <ValidationMessage For="() => Form.ScopeOfWork" />
+                </div>
+
+                <div class="aa-form-group">
+                    <label for="proposal-deliverables">Deliverables</label>
+                    <InputTextArea id="proposal-deliverables" class="aa-input aa-textarea" @bind-Value="Form.Deliverables" />
+                    <ValidationMessage For="() => Form.Deliverables" />
+                </div>
+
+                <div class="aa-form-group">
+                    <label for="proposal-timeline">Timeline</label>
+                    <InputTextArea id="proposal-timeline" class="aa-input aa-textarea" @bind-Value="Form.Timeline" />
+                    <ValidationMessage For="() => Form.Timeline" />
+                </div>
+
+                <button class="aa-btn aa-btn-primary aa-btn-full" type="submit">Create proposal</button>
+            </EditForm>
+        </article>
+    }
+</section>
+
+@code {
+    private Guid? BusinessId { get; set; }
+    private List<Proposal> ProposalList { get; set; } = [];
+    private List<Client> Clients { get; set; } = [];
+    private ProposalFormModel Form { get; set; } = new();
+    private ProposalSummary Summary { get; set; } = new();
+    private string? SuccessMessage { get; set; }
+    private string? ErrorMessage { get; set; }
+    private bool IsLoading { get; set; } = true;
+    private bool ShowForm { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            Navigation.NavigateTo("/login", forceLoad: true);
+            return;
+        }
+
+        BusinessId = await CurrentBusinessService.GetFirstBusinessIdForUserAsync(userId);
+
+        if (BusinessId is null)
+        {
+            Navigation.NavigateTo("/dashboard", forceLoad: true);
+            return;
+        }
+
+        Clients = await ClientService.GetClientsAsync(BusinessId.Value);
+        await LoadProposals();
+    }
+
+    private async Task LoadProposals()
+    {
+        if (BusinessId is null)
+        {
+            return;
+        }
+
+        IsLoading = true;
+        ProposalList = await ProposalService.GetProposalsAsync(BusinessId.Value);
+        Summary = new ProposalSummary
+        {
+            Active = ProposalList.Count(x => x.Status is ProposalStatus.Draft or ProposalStatus.Sent),
+            Sent = ProposalList.Count(x => x.Status == ProposalStatus.Sent),
+            Accepted = ProposalList.Count(x => x.Status == ProposalStatus.Accepted),
+            Value = ProposalList
+                .Where(x => x.Status is ProposalStatus.Draft or ProposalStatus.Sent or ProposalStatus.Accepted)
+                .Sum(x => x.EstimatedPrice)
+        };
+        IsLoading = false;
+    }
+
+    private void OpenCreateForm()
+    {
+        ClearMessages();
+        ShowForm = true;
+        Form = new ProposalFormModel();
+    }
+
+    private void CloseForm()
+    {
+        ShowForm = false;
+        Form = new ProposalFormModel();
+        ClearMessages();
+    }
+
+    private async Task SaveProposal()
+    {
+        if (BusinessId is null)
+        {
+            ErrorMessage = "Business workspace tidak ditemukan.";
+            return;
+        }
+
+        ClearMessages();
+        await ProposalService.CreateProposalAsync(BusinessId.Value, Form);
+        SuccessMessage = "Proposal berhasil dibuat.";
+        ShowForm = false;
+        Form = new ProposalFormModel();
+        await LoadProposals();
+    }
+
+    private async Task UpdateStatus(Guid proposalId, ProposalStatus status)
+    {
+        if (BusinessId is null)
+        {
+            return;
+        }
+
+        ClearMessages();
+        var updated = await ProposalService.UpdateProposalStatusAsync(BusinessId.Value, proposalId, status);
+        SuccessMessage = updated ? "Status proposal diupdate." : null;
+        ErrorMessage = updated ? null : "Proposal tidak ditemukan.";
+        await LoadProposals();
+    }
+
+    private void GenerateSummary()
+    {
+        var clientName = Clients.FirstOrDefault(x => x.Id == Form.ClientId)?.Name ?? "client";
+        var serviceName = string.IsNullOrWhiteSpace(Form.Title) ? "layanan bisnis" : Form.Title;
+        Form.Summary = ProposalService.GenerateProposalSummary(clientName, serviceName, Form.EstimatedPrice);
+    }
+
+    private void ClearMessages()
+    {
+        SuccessMessage = null;
+        ErrorMessage = null;
+    }
+
+    private static string Money(decimal value)
+    {
+        return $"Rp {value:N0}";
+    }
+
+    private static string GetStatusLabel(ProposalStatus status)
+    {
+        return status switch
+        {
+            ProposalStatus.Draft => "Draft",
+            ProposalStatus.Sent => "Sent",
+            ProposalStatus.Accepted => "Accepted",
+            ProposalStatus.Rejected => "Rejected",
+            ProposalStatus.ConvertedToInvoice => "Converted",
+            _ => status.ToString()
+        };
+    }
+
+    private static string GetStatusTone(ProposalStatus status)
+    {
+        return status switch
+        {
+            ProposalStatus.Accepted => "success",
+            ProposalStatus.Sent => "info",
+            ProposalStatus.Rejected => "danger",
+            ProposalStatus.ConvertedToInvoice => "purple",
+            _ => "warning"
+        };
+    }
+
+    private sealed class ProposalSummary
+    {
+        public int Active { get; set; }
+        public int Sent { get; set; }
+        public int Accepted { get; set; }
+        public decimal Value { get; set; }
+    }
+}

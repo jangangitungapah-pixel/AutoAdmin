@@ -1,0 +1,261 @@
+@page "/invoices"
+@layout AppLayout
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+@using System.Security.Claims
+
+@inject AuthenticationStateProvider AuthStateProvider
+@inject CurrentBusinessService CurrentBusinessService
+@inject InvoiceService InvoiceService
+@inject NavigationManager Navigation
+
+<PageTitle>Invoices - AutoAdmin</PageTitle>
+
+<PageHeader
+    Kicker="Billing"
+    Title="Invoices"
+    Description="Pantau invoice draft, terkirim, overdue, dan lunas dengan status yang mudah dipindai.">
+    <Actions>
+        <a class="aa-btn aa-btn-primary" href="/invoices/create">Create invoice</a>
+    </Actions>
+</PageHeader>
+
+<section class="aa-dashboard-grid aa-dashboard-grid-compact">
+    <StatCard Label="Total invoiced" Value="@Money(Summary.TotalInvoiced)" Hint="@($"{InvoiceList.Count:N0} invoice")" />
+    <StatCard Label="Outstanding" Value="@Money(Summary.Outstanding)" Hint="Perlu ditagih" />
+    <StatCard Label="Paid" Value="@Money(Summary.Paid)" Hint="Sudah lunas" />
+    <StatCard Label="Overdue" Value="@Summary.Overdue.ToString("N0")" Hint="Lewat jatuh tempo" />
+</section>
+
+@if (!string.IsNullOrWhiteSpace(SuccessMessage))
+{
+    <div class="aa-success" role="status">@SuccessMessage</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(ErrorMessage))
+{
+    <div class="aa-alert" role="alert">@ErrorMessage</div>
+}
+
+<article class="aa-panel">
+    <div class="aa-filter-row">
+        <input class="aa-input"
+               placeholder="Search invoice number or client..."
+               @bind="SearchTerm"
+               @bind:event="oninput" />
+
+        <select class="aa-input" @bind="SelectedStatusText" aria-label="Filter invoice status">
+            <option value="">All status</option>
+            @foreach (var status in Enum.GetValues<InvoiceStatus>())
+            {
+                <option value="@status.ToString()">@GetStatusLabel(status)</option>
+            }
+        </select>
+
+        <button class="aa-btn aa-btn-secondary" type="button" @onclick="LoadInvoices">Search</button>
+    </div>
+
+    <div class="aa-table-wrap">
+        @if (IsLoading)
+        {
+            <EmptyState Title="Loading invoices..." Message="AutoAdmin sedang membaca data invoice." />
+        }
+        else if (InvoiceList.Count == 0)
+        {
+            <EmptyState Title="Belum ada invoice" Message="Buat invoice pertama untuk mulai melacak pembayaran.">
+                <Actions>
+                    <a class="aa-btn aa-btn-primary" href="/invoices/create">Create first invoice</a>
+                </Actions>
+            </EmptyState>
+        }
+        else
+        {
+            <table class="aa-table">
+                <thead>
+                    <tr>
+                        <th>Invoice</th>
+                        <th>Client</th>
+                        <th>Due</th>
+                        <th>Status</th>
+                        <th>Total</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var invoice in InvoiceList)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@invoice.InvoiceNumber</strong>
+                                <span>Issued @invoice.IssueDate.ToString("dd MMM yyyy")</span>
+                            </td>
+                            <td>
+                                <strong>@(invoice.Client?.Name ?? "No client")</strong>
+                                <span>@(invoice.Client?.CompanyName ?? invoice.Client?.Email ?? "-")</span>
+                            </td>
+                            <td>
+                                <strong>@invoice.DueDate.ToString("dd MMM yyyy")</strong>
+                                <span>@GetDueText(invoice)</span>
+                            </td>
+                            <td>
+                                <StatusBadge Text="@GetStatusLabel(invoice.Status)" Tone="@GetStatusTone(invoice.Status)" />
+                            </td>
+                            <td>
+                                <strong>@Money(invoice.Total)</strong>
+                                <span>net total</span>
+                            </td>
+                            <td>
+                                <div class="aa-row-actions">
+                                    <a class="aa-icon-btn" href="@($"/invoices/{invoice.Id}")">Open</a>
+                                    @if (invoice.Status != InvoiceStatus.Paid && invoice.Status != InvoiceStatus.Cancelled)
+                                    {
+                                        <button class="aa-icon-btn success" type="button" @onclick="() => MarkPaid(invoice.Id)">Mark paid</button>
+                                    }
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+</article>
+
+@code {
+    private Guid? BusinessId { get; set; }
+    private List<Invoice> InvoiceList { get; set; } = [];
+    private InvoiceSummary Summary { get; set; } = new();
+    private string SearchTerm { get; set; } = string.Empty;
+    private string SelectedStatusText { get; set; } = string.Empty;
+    private string? SuccessMessage { get; set; }
+    private string? ErrorMessage { get; set; }
+    private bool IsLoading { get; set; } = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            Navigation.NavigateTo("/login", forceLoad: true);
+            return;
+        }
+
+        BusinessId = await CurrentBusinessService.GetFirstBusinessIdForUserAsync(userId);
+
+        if (BusinessId is null)
+        {
+            Navigation.NavigateTo("/dashboard", forceLoad: true);
+            return;
+        }
+
+        await LoadInvoices();
+    }
+
+    private async Task LoadInvoices()
+    {
+        if (BusinessId is null)
+        {
+            return;
+        }
+
+        IsLoading = true;
+        ErrorMessage = null;
+
+        InvoiceStatus? selectedStatus = null;
+
+        if (!string.IsNullOrWhiteSpace(SelectedStatusText) &&
+            Enum.TryParse<InvoiceStatus>(SelectedStatusText, out var parsedStatus))
+        {
+            selectedStatus = parsedStatus;
+        }
+
+        InvoiceList = await InvoiceService.GetInvoicesAsync(BusinessId.Value, SearchTerm, selectedStatus);
+
+        Summary = new InvoiceSummary
+        {
+            TotalInvoiced = InvoiceList.Sum(x => x.Total),
+            Outstanding = InvoiceList
+                .Where(x => x.Status is InvoiceStatus.Draft or InvoiceStatus.Sent or InvoiceStatus.Overdue)
+                .Sum(x => x.Total),
+            Paid = InvoiceList.Where(x => x.Status == InvoiceStatus.Paid).Sum(x => x.Total),
+            Overdue = InvoiceList.Count(x =>
+                x.Status != InvoiceStatus.Paid &&
+                x.Status != InvoiceStatus.Cancelled &&
+                x.DueDate < DateOnly.FromDateTime(DateTime.UtcNow))
+        };
+
+        IsLoading = false;
+    }
+
+    private async Task MarkPaid(Guid invoiceId)
+    {
+        if (BusinessId is null)
+        {
+            return;
+        }
+
+        ErrorMessage = null;
+        await InvoiceService.MarkAsPaidAsync(BusinessId.Value, invoiceId);
+        SuccessMessage = "Invoice ditandai lunas.";
+        await LoadInvoices();
+    }
+
+    private static string Money(decimal value)
+    {
+        return $"Rp {value:N0}";
+    }
+
+    private static string GetDueText(Invoice invoice)
+    {
+        if (invoice.Status == InvoiceStatus.Paid)
+        {
+            return "paid";
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        if (invoice.DueDate < today)
+        {
+            return "overdue";
+        }
+
+        var days = invoice.DueDate.DayNumber - today.DayNumber;
+        return days == 0 ? "due today" : $"{days} day(s) left";
+    }
+
+    private static string GetStatusLabel(InvoiceStatus status)
+    {
+        return status switch
+        {
+            InvoiceStatus.Draft => "Draft",
+            InvoiceStatus.Sent => "Sent",
+            InvoiceStatus.Paid => "Paid",
+            InvoiceStatus.Overdue => "Overdue",
+            InvoiceStatus.Cancelled => "Cancelled",
+            _ => status.ToString()
+        };
+    }
+
+    private static string GetStatusTone(InvoiceStatus status)
+    {
+        return status switch
+        {
+            InvoiceStatus.Paid => "success",
+            InvoiceStatus.Sent => "info",
+            InvoiceStatus.Overdue => "danger",
+            InvoiceStatus.Cancelled => "neutral",
+            _ => "warning"
+        };
+    }
+
+    private sealed class InvoiceSummary
+    {
+        public decimal TotalInvoiced { get; set; }
+        public decimal Outstanding { get; set; }
+        public decimal Paid { get; set; }
+        public int Overdue { get; set; }
+    }
+}

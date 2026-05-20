@@ -1,0 +1,21 @@
+<article class="aa-panel @Class">
+    @if (Header is not null)
+    {
+        <div class="aa-panel-header">
+            @Header
+        </div>
+    }
+
+    @ChildContent
+</article>
+
+@code {
+    [Parameter]
+    public RenderFragment? Header { get; set; }
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+
+    [Parameter]
+    public string? Class { get; set; }
+}

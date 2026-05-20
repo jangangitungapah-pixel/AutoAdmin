@@ -1,0 +1,392 @@
+@page "/tasks"
+@layout AppLayout
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+@using System.Security.Claims
+
+@inject AuthenticationStateProvider AuthStateProvider
+@inject CurrentBusinessService CurrentBusinessService
+@inject ClientService ClientService
+@inject InvoiceService InvoiceService
+@inject TaskService TaskService
+@inject NavigationManager Navigation
+
+<PageTitle>Tasks - AutoAdmin</PageTitle>
+
+<PageHeader
+    Kicker="Follow-up queue"
+    Title="Tasks"
+    Description="Atur follow-up client, pembayaran, proposal, dan pekerjaan admin harian.">
+    <Actions>
+        <button class="aa-btn aa-btn-primary" type="button" @onclick="OpenCreateForm">New task</button>
+    </Actions>
+</PageHeader>
+
+<section class="aa-dashboard-grid aa-dashboard-grid-compact">
+    <StatCard Label="Open" Value="@Summary.Open.ToString("N0")" Hint="Todo dan in progress" />
+    <StatCard Label="Due today" Value="@Summary.DueToday.ToString("N0")" Hint="Harus dikerjakan hari ini" />
+    <StatCard Label="High priority" Value="@Summary.HighPriority.ToString("N0")" Hint="High dan urgent" />
+    <StatCard Label="Done" Value="@Summary.Done.ToString("N0")" Hint="Selesai" />
+</section>
+
+@if (!string.IsNullOrWhiteSpace(SuccessMessage))
+{
+    <div class="aa-success" role="status">@SuccessMessage</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(ErrorMessage))
+{
+    <div class="aa-alert" role="alert">@ErrorMessage</div>
+}
+
+<section class="aa-client-layout">
+    <article class="aa-panel">
+        <div class="aa-filter-row aa-filter-row-compact">
+            <select class="aa-input" @bind="SelectedStatusText" aria-label="Filter task status">
+                <option value="">All status</option>
+                @foreach (var status in Enum.GetValues<TaskItemStatus>())
+                {
+                    <option value="@status.ToString()">@GetStatusLabel(status)</option>
+                }
+            </select>
+
+            <button class="aa-btn aa-btn-secondary" type="button" @onclick="LoadTasks">Filter</button>
+        </div>
+
+        @if (IsLoading)
+        {
+            <EmptyState Title="Loading tasks..." Message="AutoAdmin sedang membaca queue." />
+        }
+        else if (TaskList.Count == 0)
+        {
+            <EmptyState Title="Belum ada task" Message="Tambahkan task untuk follow-up pembayaran, proposal, atau client.">
+                <Actions>
+                    <button class="aa-btn aa-btn-primary" type="button" @onclick="OpenCreateForm">Create task</button>
+                </Actions>
+            </EmptyState>
+        }
+        else
+        {
+            <div class="aa-task-board">
+                @foreach (var group in TaskGroups)
+                {
+                    <section class="aa-task-column">
+                        <div class="aa-task-column-header">
+                            <h2>@group.Title</h2>
+                            <span>@group.Tasks.Count</span>
+                        </div>
+
+                        <div class="aa-task-list">
+                            @foreach (var task in group.Tasks)
+                            {
+                                <article class="aa-task-card">
+                                    <div class="aa-record-main">
+                                        <div>
+                                            <h3>@task.Title</h3>
+                                            <p>@(task.Description ?? "No description")</p>
+                                        </div>
+                                        <StatusBadge Text="@GetPriorityLabel(task.Priority)" Tone="@GetPriorityTone(task.Priority)" />
+                                    </div>
+
+                                    <div class="aa-record-meta">
+                                        <span>@(task.Client?.Name ?? "General")</span>
+                                        <span>@(task.Invoice?.InvoiceNumber ?? "No invoice")</span>
+                                        <span>@GetDueLabel(task.DueDate)</span>
+                                    </div>
+
+                                    <div class="aa-row-actions aa-row-actions-left">
+                                        @if (task.Status != TaskItemStatus.InProgress)
+                                        {
+                                            <button class="aa-icon-btn" type="button" @onclick="() => UpdateStatus(task.Id, TaskItemStatus.InProgress)">Start</button>
+                                        }
+                                        @if (task.Status != TaskItemStatus.Done)
+                                        {
+                                            <button class="aa-icon-btn success" type="button" @onclick="() => UpdateStatus(task.Id, TaskItemStatus.Done)">Done</button>
+                                        }
+                                        @if (task.Status != TaskItemStatus.Cancelled)
+                                        {
+                                            <button class="aa-icon-btn danger" type="button" @onclick="() => UpdateStatus(task.Id, TaskItemStatus.Cancelled)">Cancel</button>
+                                        }
+                                    </div>
+                                </article>
+                            }
+                        </div>
+                    </section>
+                }
+            </div>
+        }
+    </article>
+
+    @if (ShowForm)
+    {
+        <article class="aa-panel aa-form-panel">
+            <div class="aa-panel-header aa-panel-header-split">
+                <div>
+                    <span>New task</span>
+                    <h2>Create follow-up</h2>
+                </div>
+                <button class="aa-icon-btn" type="button" @onclick="CloseForm">Close</button>
+            </div>
+
+            <EditForm Model="Form" OnValidSubmit="SaveTask">
+                <DataAnnotationsValidator />
+
+                <div class="aa-form-group">
+                    <label for="task-title">Title</label>
+                    <InputText id="task-title" class="aa-input" @bind-Value="Form.Title" />
+                    <ValidationMessage For="() => Form.Title" />
+                </div>
+
+                <div class="aa-form-grid">
+                    <div class="aa-form-group">
+                        <label for="task-status">Status</label>
+                        <InputSelect id="task-status" class="aa-input" @bind-Value="Form.Status">
+                            @foreach (var status in Enum.GetValues<TaskItemStatus>())
+                            {
+                                <option value="@status">@GetStatusLabel(status)</option>
+                            }
+                        </InputSelect>
+                    </div>
+
+                    <div class="aa-form-group">
+                        <label for="task-priority">Priority</label>
+                        <InputSelect id="task-priority" class="aa-input" @bind-Value="Form.Priority">
+                            @foreach (var priority in Enum.GetValues<TaskPriority>())
+                            {
+                                <option value="@priority">@GetPriorityLabel(priority)</option>
+                            }
+                        </InputSelect>
+                    </div>
+                </div>
+
+                <div class="aa-form-grid">
+                    <div class="aa-form-group">
+                        <label for="task-client">Client</label>
+                        <select id="task-client" class="aa-input" @bind="Form.ClientId">
+                            <option value="">No client</option>
+                            @foreach (var client in Clients)
+                            {
+                                <option value="@client.Id">@client.Name</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="aa-form-group">
+                        <label for="task-invoice">Invoice</label>
+                        <select id="task-invoice" class="aa-input" @bind="Form.InvoiceId">
+                            <option value="">No invoice</option>
+                            @foreach (var invoice in Invoices)
+                            {
+                                <option value="@invoice.Id">@invoice.InvoiceNumber</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                <div class="aa-form-group">
+                    <label for="task-due">Due date</label>
+                    <InputDate id="task-due" class="aa-input" @bind-Value="Form.DueDate" />
+                </div>
+
+                <div class="aa-form-group">
+                    <label for="task-description">Description</label>
+                    <InputTextArea id="task-description" class="aa-input aa-textarea" @bind-Value="Form.Description" />
+                    <ValidationMessage For="() => Form.Description" />
+                </div>
+
+                <button class="aa-btn aa-btn-primary aa-btn-full" type="submit">Create task</button>
+            </EditForm>
+        </article>
+    }
+</section>
+
+@code {
+    private Guid? BusinessId { get; set; }
+    private List<TaskItem> TaskList { get; set; } = [];
+    private List<Client> Clients { get; set; } = [];
+    private List<Invoice> Invoices { get; set; } = [];
+    private TaskFormModel Form { get; set; } = new();
+    private TaskSummary Summary { get; set; } = new();
+    private string SelectedStatusText { get; set; } = string.Empty;
+    private string? SuccessMessage { get; set; }
+    private string? ErrorMessage { get; set; }
+    private bool IsLoading { get; set; } = true;
+    private bool ShowForm { get; set; }
+
+    private List<TaskGroup> TaskGroups =>
+    [
+        new("Todo", TaskList.Where(x => x.Status == TaskItemStatus.Todo).ToList()),
+        new("In progress", TaskList.Where(x => x.Status == TaskItemStatus.InProgress).ToList()),
+        new("Done", TaskList.Where(x => x.Status == TaskItemStatus.Done).ToList()),
+        new("Cancelled", TaskList.Where(x => x.Status == TaskItemStatus.Cancelled).ToList())
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            Navigation.NavigateTo("/login", forceLoad: true);
+            return;
+        }
+
+        BusinessId = await CurrentBusinessService.GetFirstBusinessIdForUserAsync(userId);
+
+        if (BusinessId is null)
+        {
+            Navigation.NavigateTo("/dashboard", forceLoad: true);
+            return;
+        }
+
+        Clients = await ClientService.GetClientsAsync(BusinessId.Value);
+        Invoices = await InvoiceService.GetInvoicesAsync(BusinessId.Value);
+        await LoadTasks();
+    }
+
+    private async Task LoadTasks()
+    {
+        if (BusinessId is null)
+        {
+            return;
+        }
+
+        IsLoading = true;
+
+        TaskItemStatus? selectedStatus = null;
+        if (!string.IsNullOrWhiteSpace(SelectedStatusText) &&
+            Enum.TryParse<TaskItemStatus>(SelectedStatusText, out var parsedStatus))
+        {
+            selectedStatus = parsedStatus;
+        }
+
+        TaskList = await TaskService.GetTasksAsync(BusinessId.Value, selectedStatus);
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        Summary = new TaskSummary
+        {
+            Open = TaskList.Count(x => x.Status is TaskItemStatus.Todo or TaskItemStatus.InProgress),
+            DueToday = TaskList.Count(x => x.DueDate == today && x.Status is not TaskItemStatus.Done and not TaskItemStatus.Cancelled),
+            HighPriority = TaskList.Count(x =>
+                x.Priority is TaskPriority.High or TaskPriority.Urgent &&
+                x.Status is not TaskItemStatus.Done and not TaskItemStatus.Cancelled),
+            Done = TaskList.Count(x => x.Status == TaskItemStatus.Done)
+        };
+
+        IsLoading = false;
+    }
+
+    private void OpenCreateForm()
+    {
+        ClearMessages();
+        ShowForm = true;
+        Form = new TaskFormModel();
+    }
+
+    private void CloseForm()
+    {
+        ShowForm = false;
+        Form = new TaskFormModel();
+        ClearMessages();
+    }
+
+    private async Task SaveTask()
+    {
+        if (BusinessId is null)
+        {
+            ErrorMessage = "Business workspace tidak ditemukan.";
+            return;
+        }
+
+        ClearMessages();
+        await TaskService.CreateTaskAsync(BusinessId.Value, Form);
+        SuccessMessage = "Task berhasil dibuat.";
+        ShowForm = false;
+        Form = new TaskFormModel();
+        await LoadTasks();
+    }
+
+    private async Task UpdateStatus(Guid taskId, TaskItemStatus status)
+    {
+        if (BusinessId is null)
+        {
+            return;
+        }
+
+        ClearMessages();
+        var updated = await TaskService.UpdateTaskStatusAsync(BusinessId.Value, taskId, status);
+        SuccessMessage = updated ? "Status task diupdate." : null;
+        ErrorMessage = updated ? null : "Task tidak ditemukan.";
+        await LoadTasks();
+    }
+
+    private void ClearMessages()
+    {
+        SuccessMessage = null;
+        ErrorMessage = null;
+    }
+
+    private static string GetDueLabel(DateOnly? dueDate)
+    {
+        if (dueDate is null)
+        {
+            return "No due date";
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        if (dueDate == today)
+        {
+            return "Due today";
+        }
+
+        return dueDate < today ? $"Overdue {dueDate:dd MMM yyyy}" : $"Due {dueDate:dd MMM yyyy}";
+    }
+
+    private static string GetStatusLabel(TaskItemStatus status)
+    {
+        return status switch
+        {
+            TaskItemStatus.Todo => "Todo",
+            TaskItemStatus.InProgress => "In progress",
+            TaskItemStatus.Done => "Done",
+            TaskItemStatus.Cancelled => "Cancelled",
+            _ => status.ToString()
+        };
+    }
+
+    private static string GetPriorityLabel(TaskPriority priority)
+    {
+        return priority switch
+        {
+            TaskPriority.Low => "Low",
+            TaskPriority.Medium => "Medium",
+            TaskPriority.High => "High",
+            TaskPriority.Urgent => "Urgent",
+            _ => priority.ToString()
+        };
+    }
+
+    private static string GetPriorityTone(TaskPriority priority)
+    {
+        return priority switch
+        {
+            TaskPriority.Urgent => "danger",
+            TaskPriority.High => "warning",
+            TaskPriority.Medium => "info",
+            _ => "neutral"
+        };
+    }
+
+    private sealed record TaskGroup(string Title, List<TaskItem> Tasks);
+
+    private sealed class TaskSummary
+    {
+        public int Open { get; set; }
+        public int DueToday { get; set; }
+        public int HighPriority { get; set; }
+        public int Done { get; set; }
+    }
+}

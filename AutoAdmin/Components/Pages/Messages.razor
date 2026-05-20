@@ -1,0 +1,334 @@
+@page "/messages"
+@layout AppLayout
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+
+@inject AuthenticationStateProvider AuthStateProvider
+@inject CurrentBusinessService CurrentBusinessService
+@inject ClientService ClientService
+@inject InvoiceService InvoiceService
+@inject ProposalService ProposalService
+@inject MessageGeneratorService MessageGeneratorService
+@inject AutoAdminDbContext Db
+@inject NavigationManager Navigation
+
+<PageTitle>Messages - AutoAdmin</PageTitle>
+
+<PageHeader
+    Kicker="AI message drafts"
+    Title="Messages"
+    Description="Generate draft follow-up, reminder pembayaran, dan respon client dalam gaya komunikasi yang konsisten.">
+    <Actions>
+        <button class="aa-btn aa-btn-primary" type="button" @onclick="GenerateMessage">Generate draft</button>
+    </Actions>
+</PageHeader>
+
+@if (!string.IsNullOrWhiteSpace(SuccessMessage))
+{
+    <div class="aa-success" role="status">@SuccessMessage</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(ErrorMessage))
+{
+    <div class="aa-alert" role="alert">@ErrorMessage</div>
+}
+
+<section class="aa-split-layout">
+    <article class="aa-panel">
+        <div class="aa-panel-header">
+            <span>Composer</span>
+            <h2>Draft generator</h2>
+        </div>
+
+        <div class="aa-form-grid">
+            <div class="aa-form-group">
+                <label for="message-type">Message type</label>
+                <select id="message-type" class="aa-input" @bind="Input.Type">
+                    @foreach (var type in Enum.GetValues<AiMessageType>())
+                    {
+                        <option value="@type">@GetMessageTypeLabel(type)</option>
+                    }
+                </select>
+            </div>
+
+            <div class="aa-form-group">
+                <label for="message-tone">Tone</label>
+                <select id="message-tone" class="aa-input" @bind="Input.Tone">
+                    @foreach (var tone in Enum.GetValues<MessageTone>())
+                    {
+                        <option value="@tone">@GetToneLabel(tone)</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <div class="aa-form-grid">
+            <div class="aa-form-group">
+                <label for="message-client">Client</label>
+                <select id="message-client" class="aa-input" @bind="Input.ClientId">
+                    <option value="">No client</option>
+                    @foreach (var client in Clients)
+                    {
+                        <option value="@client.Id">@client.Name</option>
+                    }
+                </select>
+            </div>
+
+            <div class="aa-form-group">
+                <label for="message-invoice">Invoice</label>
+                <select id="message-invoice" class="aa-input" @bind="Input.InvoiceId">
+                    <option value="">No invoice</option>
+                    @foreach (var invoice in Invoices)
+                    {
+                        <option value="@invoice.Id">@invoice.InvoiceNumber - @Money(invoice.Total)</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <div class="aa-form-group">
+            <label for="message-proposal">Proposal</label>
+            <select id="message-proposal" class="aa-input" @bind="Input.ProposalId">
+                <option value="">No proposal</option>
+                @foreach (var proposal in Proposals)
+                {
+                    <option value="@proposal.Id">@proposal.Title</option>
+                }
+            </select>
+        </div>
+
+        <div class="aa-action-row">
+            <button class="aa-btn aa-btn-primary" type="button" @onclick="GenerateMessage">Generate draft</button>
+            <button class="aa-btn aa-btn-secondary" type="button" @onclick="SaveDraft" disabled="@string.IsNullOrWhiteSpace(DraftContent)">Save draft</button>
+        </div>
+
+        <div class="aa-form-group aa-message-output">
+            <label for="draft-content">Draft content</label>
+            <textarea id="draft-content" class="aa-input aa-textarea aa-draft-box" @bind="DraftContent"></textarea>
+        </div>
+    </article>
+
+    <article class="aa-panel">
+        <div class="aa-panel-header aa-panel-header-split">
+            <div>
+                <span>History</span>
+                <h2>Recent drafts</h2>
+            </div>
+            <button class="aa-icon-btn" type="button" @onclick="LoadDrafts">Refresh</button>
+        </div>
+
+        @if (Drafts.Count == 0)
+        {
+            <EmptyState Title="Belum ada draft" Message="Generate dan simpan pesan untuk melihat history di sini." />
+        }
+        else
+        {
+            <div class="aa-card-list">
+                @foreach (var draft in Drafts)
+                {
+                    <article class="aa-record-card">
+                        <div class="aa-record-main">
+                            <div>
+                                <h3>@GetMessageTypeLabel(draft.Type)</h3>
+                                <p>@draft.Content</p>
+                            </div>
+                            <StatusBadge Text="@GetToneLabel(draft.Tone)" Tone="info" />
+                        </div>
+
+                        <div class="aa-record-meta">
+                            <span>@(draft.Client?.Name ?? "No client")</span>
+                            <span>@draft.CreatedAtUtc.ToLocalTime().ToString("dd MMM yyyy HH:mm")</span>
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </article>
+</section>
+
+@code {
+    private Guid? BusinessId { get; set; }
+    private List<Client> Clients { get; set; } = [];
+    private List<Invoice> Invoices { get; set; } = [];
+    private List<Proposal> Proposals { get; set; } = [];
+    private List<AiMessageDraft> Drafts { get; set; } = [];
+    private MessageInput Input { get; set; } = new();
+    private string DraftContent { get; set; } = string.Empty;
+    private string? SuccessMessage { get; set; }
+    private string? ErrorMessage { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            Navigation.NavigateTo("/login", forceLoad: true);
+            return;
+        }
+
+        BusinessId = await CurrentBusinessService.GetFirstBusinessIdForUserAsync(userId);
+
+        if (BusinessId is null)
+        {
+            Navigation.NavigateTo("/dashboard", forceLoad: true);
+            return;
+        }
+
+        Clients = await ClientService.GetClientsAsync(BusinessId.Value);
+        Invoices = await InvoiceService.GetInvoicesAsync(BusinessId.Value);
+        Proposals = await ProposalService.GetProposalsAsync(BusinessId.Value);
+        await LoadDrafts();
+    }
+
+    private async Task LoadDrafts()
+    {
+        if (BusinessId is null)
+        {
+            return;
+        }
+
+        Drafts = await Db.AiMessageDrafts
+            .AsNoTracking()
+            .Include(x => x.Client)
+            .Where(x => x.BusinessId == BusinessId.Value)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Take(8)
+            .ToListAsync();
+    }
+
+    private void GenerateMessage()
+    {
+        ClearMessages();
+
+        var client = Clients.FirstOrDefault(x => x.Id == Input.ClientId);
+        var clientName = client?.Name ?? "client";
+
+        DraftContent = Input.Type switch
+        {
+            AiMessageType.PaymentReminder => GeneratePaymentReminder(clientName),
+            AiMessageType.ProposalFollowUp => GenerateProposalFollowUp(clientName),
+            AiMessageType.ThankYou => $"Halo {clientName}, terima kasih sudah bekerja sama dengan kami. Kami senang bisa membantu dan siap support jika ada kebutuhan berikutnya.",
+            AiMessageType.MeetingReminder => $"Halo {clientName}, izin reminder untuk jadwal meeting kita. Mohon kabari jika ada perubahan waktu atau agenda tambahan yang perlu disiapkan.",
+            AiMessageType.Offer => $"Halo {clientName}, kami punya penawaran layanan yang mungkin relevan untuk kebutuhan bisnis Anda saat ini. Jika berkenan, kami bisa kirim detail dan estimasi biayanya.",
+            _ => $"Halo {clientName}, aku ingin follow-up komunikasi terakhir kita. Kalau ada update atau kebutuhan yang perlu dibantu, kabari aku ya."
+        };
+    }
+
+    private string GeneratePaymentReminder(string fallbackClientName)
+    {
+        var invoice = Invoices.FirstOrDefault(x => x.Id == Input.InvoiceId);
+
+        if (invoice is null)
+        {
+            ErrorMessage = "Pilih invoice untuk membuat payment reminder.";
+            return string.Empty;
+        }
+
+        var clientName = invoice.Client?.Name ?? fallbackClientName;
+        return MessageGeneratorService.GeneratePaymentReminder(
+            clientName,
+            invoice.InvoiceNumber,
+            invoice.Total,
+            Input.Tone);
+    }
+
+    private string GenerateProposalFollowUp(string fallbackClientName)
+    {
+        var proposal = Proposals.FirstOrDefault(x => x.Id == Input.ProposalId);
+
+        if (proposal is null)
+        {
+            ErrorMessage = "Pilih proposal untuk membuat proposal follow-up.";
+            return string.Empty;
+        }
+
+        var clientName = proposal.Client?.Name ?? fallbackClientName;
+        return MessageGeneratorService.GenerateProposalFollowUp(
+            clientName,
+            proposal.Title,
+            Input.Tone);
+    }
+
+    private async Task SaveDraft()
+    {
+        if (BusinessId is null)
+        {
+            ErrorMessage = "Business workspace tidak ditemukan.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(DraftContent))
+        {
+            ErrorMessage = "Generate draft dulu sebelum menyimpan.";
+            return;
+        }
+
+        ClearMessages();
+
+        Db.AiMessageDrafts.Add(new AiMessageDraft
+        {
+            BusinessId = BusinessId.Value,
+            ClientId = Input.ClientId,
+            InvoiceId = Input.InvoiceId,
+            Type = Input.Type,
+            Tone = Input.Tone,
+            Content = DraftContent.Trim(),
+            CreatedAtUtc = DateTime.UtcNow
+        });
+
+        await Db.SaveChangesAsync();
+        SuccessMessage = "Draft berhasil disimpan.";
+        await LoadDrafts();
+    }
+
+    private void ClearMessages()
+    {
+        SuccessMessage = null;
+        ErrorMessage = null;
+    }
+
+    private static string Money(decimal value)
+    {
+        return $"Rp {value:N0}";
+    }
+
+    private static string GetMessageTypeLabel(AiMessageType type)
+    {
+        return type switch
+        {
+            AiMessageType.FollowUp => "Follow-up",
+            AiMessageType.PaymentReminder => "Payment reminder",
+            AiMessageType.ThankYou => "Thank you",
+            AiMessageType.ProposalFollowUp => "Proposal follow-up",
+            AiMessageType.MeetingReminder => "Meeting reminder",
+            AiMessageType.Offer => "Offer",
+            _ => type.ToString()
+        };
+    }
+
+    private static string GetToneLabel(MessageTone tone)
+    {
+        return tone switch
+        {
+            MessageTone.Friendly => "Friendly",
+            MessageTone.Professional => "Professional",
+            MessageTone.Firm => "Firm",
+            MessageTone.Casual => "Casual",
+            _ => tone.ToString()
+        };
+    }
+
+    private sealed class MessageInput
+    {
+        public AiMessageType Type { get; set; } = AiMessageType.PaymentReminder;
+        public MessageTone Tone { get; set; } = MessageTone.Professional;
+        public Guid? ClientId { get; set; }
+        public Guid? InvoiceId { get; set; }
+        public Guid? ProposalId { get; set; }
+    }
+}

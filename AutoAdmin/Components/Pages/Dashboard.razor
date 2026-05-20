@@ -1,4 +1,5 @@
 @page "/dashboard"
+@layout AppLayout
 @attribute [Authorize]
 @using Microsoft.EntityFrameworkCore
 @using System.Security.Claims
@@ -6,168 +7,178 @@
 @inject AutoAdminDbContext Db
 @inject NavigationManager Navigation
 
-<PageTitle>Dashboard — AutoAdmin</PageTitle>
+<PageTitle>Dashboard - AutoAdmin</PageTitle>
 
-<main class="aa-app">
-    <aside class="aa-sidebar">
-        <a class="aa-app-brand" href="/dashboard">
-            <div class="aa-logo">A</div>
-            <span>AutoAdmin</span>
-        </a>
+<PageHeader
+    Kicker="Command center"
+    Title="@BusinessName"
+    Description="Pantau invoice, pipeline, task, dan follow-up harian dalam satu layar operasional.">
+    <Actions>
+        <a class="aa-btn aa-btn-secondary" href="/clients">Manage clients</a>
+        <a class="aa-btn aa-btn-primary" href="/invoices/create">New invoice</a>
+    </Actions>
+</PageHeader>
 
-        <nav class="aa-side-nav">
-            <a class="active" href="/dashboard">Dashboard</a>
-            <a href="/clients">Clients</a>
-            <a href="/invoices">Invoices</a>
-            <a href="/proposals">Proposals</a>
-            <a href="/tasks">Tasks</a>
-            <a href="/messages">AI Messages</a>
-            <a href="/settings">Settings</a>
-        </nav>
+<section class="aa-dashboard-grid">
+    <StatCard Label="Paid Revenue" Value="@Money(Stats.PaidRevenue)" Hint="Invoice yang sudah lunas" />
+    <StatCard Label="Receivables" Value="@Money(Stats.Receivables)" Hint="Belum dibayar" />
+    <StatCard Label="Pipeline" Value="@Money(Stats.PipelineValue)" Hint="@($"{Stats.ActiveClients} client aktif")" />
+    <StatCard Label="Open Tasks" Value="@Stats.OpenTasks.ToString("N0")" Hint="Perlu follow-up" />
+</section>
 
-        <a class="aa-logout" href="/logout">Logout</a>
-    </aside>
-
-    <section class="aa-main">
-        <header class="aa-topbar">
+<section class="aa-content-grid">
+    <article class="aa-panel aa-panel-large">
+        <div class="aa-panel-header aa-panel-header-split">
             <div>
-                <span>Workspace</span>
-                <h1>@BusinessName</h1>
+                <span>Today's focus</span>
+                <h2>@FocusTitle</h2>
             </div>
+            <StatusBadge Text="@FocusBadgeText" Tone="@FocusBadgeTone" />
+        </div>
 
-            <div class="aa-user-pill">
-                @UserEmail
-            </div>
-        </header>
-
-        <section class="aa-dashboard-grid">
-            <article class="aa-stat-card">
-                <span>Total Revenue</span>
-                <strong>Rp @Stats.TotalRevenue.ToString("N0")</strong>
-                <small>From all invoices</small>
-            </article>
-
-            <article class="aa-stat-card">
-                <span>Clients</span>
-                <strong>@Stats.TotalClients</strong>
-                <small>Active business contacts</small>
-            </article>
-
-            <article class="aa-stat-card">
-                <span>Pending Invoices</span>
+        <div class="aa-focus-list">
+            <div>
                 <strong>@Stats.PendingInvoices</strong>
-                <small>Need attention</small>
-            </article>
+                <span>invoice belum lunas</span>
+            </div>
+            <div>
+                <strong>@Stats.OverdueInvoices</strong>
+                <span>invoice overdue</span>
+            </div>
+            <div>
+                <strong>@Stats.ProposalsSent</strong>
+                <span>proposal menunggu respon</span>
+            </div>
+        </div>
 
-            <article class="aa-stat-card">
-                <span>Open Tasks</span>
-                <strong>@Stats.OpenTasks</strong>
-                <small>Follow-up queue</small>
-            </article>
-        </section>
+        <p class="aa-muted aa-prose">@FocusMessage</p>
 
-        <section class="aa-content-grid">
-            <article class="aa-panel aa-panel-large">
-                <div class="aa-panel-header">
-                    <div>
-                        <span>Business Copilot</span>
-                        <h2>Today's focus</h2>
+        <div class="aa-action-row">
+            <a class="aa-btn aa-btn-secondary" href="/tasks">Review tasks</a>
+            <a class="aa-btn aa-btn-secondary" href="/messages">Draft follow-up</a>
+            <a class="aa-btn aa-btn-primary" href="/proposals">Track proposals</a>
+        </div>
+    </article>
+
+    <article class="aa-panel">
+        <div class="aa-panel-header aa-panel-header-split">
+            <div>
+                <span>Receivables</span>
+                <h2>Due soon</h2>
+            </div>
+            <a class="aa-link" href="/invoices">View all</a>
+        </div>
+
+        <div class="aa-list">
+            @if (DueInvoices.Count == 0)
+            {
+                <p class="aa-muted">Tidak ada invoice yang perlu ditagih.</p>
+            }
+            else
+            {
+                @foreach (var invoice in DueInvoices)
+                {
+                    <a class="aa-list-item aa-list-link" href="@($"/invoices/{invoice.Id}")">
+                        <div>
+                            <strong>@invoice.InvoiceNumber</strong>
+                            <span>@(invoice.Client?.Name ?? "No client") - due @invoice.DueDate.ToString("dd MMM yyyy")</span>
+                        </div>
+                        <small>@Money(invoice.Total)</small>
+                    </a>
+                }
+            }
+        </div>
+    </article>
+
+    <article class="aa-panel">
+        <div class="aa-panel-header aa-panel-header-split">
+            <div>
+                <span>Tasks</span>
+                <h2>Next actions</h2>
+            </div>
+            <a class="aa-link" href="/tasks">View all</a>
+        </div>
+
+        <div class="aa-list">
+            @if (OpenTasks.Count == 0)
+            {
+                <p class="aa-muted">Tidak ada task terbuka.</p>
+            }
+            else
+            {
+                @foreach (var task in OpenTasks)
+                {
+                    <div class="aa-list-item">
+                        <div>
+                            <strong>@task.Title</strong>
+                            <span>@(task.Client?.Name ?? "General") - @GetDueLabel(task.DueDate)</span>
+                        </div>
+                        <StatusBadge Text="@task.Priority.ToString()" Tone="@GetPriorityTone(task.Priority)" />
                     </div>
-                </div>
+                }
+            }
+        </div>
+    </article>
 
-                <div class="aa-copilot-box">
-                    <div class="aa-copilot-icon">✦</div>
-                    <div>
-                        <strong>Recommended action</strong>
-                        <p>
-                            Review invoice pending dan follow-up task yang jatuh tempo.
-                            AutoAdmin akan bantu prioritasin kerja admin harian bisnis lo.
-                        </p>
+    <article class="aa-panel">
+        <div class="aa-panel-header aa-panel-header-split">
+            <div>
+                <span>Pipeline</span>
+                <h2>Recent clients</h2>
+            </div>
+            <a class="aa-link" href="/clients">View all</a>
+        </div>
+
+        <div class="aa-list">
+            @if (RecentClients.Count == 0)
+            {
+                <p class="aa-muted">Belum ada client.</p>
+            }
+            else
+            {
+                @foreach (var client in RecentClients)
+                {
+                    <div class="aa-list-item">
+                        <div>
+                            <strong>@client.Name</strong>
+                            <span>@(client.CompanyName ?? client.Email ?? "No detail")</span>
+                        </div>
+                        <StatusBadge Text="@GetClientStatusLabel(client.Status)" Tone="@GetClientStatusTone(client.Status)" />
                     </div>
-                </div>
-
-                <div class="aa-action-row">
-                    <a class="aa-btn aa-btn-secondary" href="/clients">Manage clients</a>
-                    <a class="aa-btn aa-btn-primary" href="/invoices">Create invoice</a>
-                </div>
-            </article>
-
-            <article class="aa-panel">
-                <div class="aa-panel-header">
-                    <div>
-                        <span>Recent Clients</span>
-                        <h2>Latest contacts</h2>
-                    </div>
-                </div>
-
-                <div class="aa-list">
-                    @if (RecentClients.Count == 0)
-                    {
-                        <p class="aa-muted">Belum ada client.</p>
-                    }
-                    else
-                    {
-                        @foreach (var client in RecentClients)
-                        {
-                            <div class="aa-list-item">
-                                <div>
-                                    <strong>@client.Name</strong>
-                                    <span>@(client.CompanyName ?? client.Email ?? "No detail")</span>
-                                </div>
-                                <small>@client.Status</small>
-                            </div>
-                        }
-                    }
-                </div>
-            </article>
-
-            <article class="aa-panel">
-                <div class="aa-panel-header">
-                    <div>
-                        <span>Open Tasks</span>
-                        <h2>Follow-up queue</h2>
-                    </div>
-                </div>
-
-                <div class="aa-list">
-                    @if (OpenTasks.Count == 0)
-                    {
-                        <p class="aa-muted">Tidak ada task terbuka.</p>
-                    }
-                    else
-                    {
-                        @foreach (var task in OpenTasks)
-                        {
-                            <div class="aa-list-item">
-                                <div>
-                                    <strong>@task.Title</strong>
-                                    <span>@(task.Client?.Name ?? "General task")</span>
-                                </div>
-                                <small>@task.Priority</small>
-                            </div>
-                        }
-                    }
-                </div>
-            </article>
-        </section>
-    </section>
-</main>
+                }
+            }
+        </div>
+    </article>
+</section>
 
 @code {
     private string BusinessName { get; set; } = "AutoAdmin";
-    private string UserEmail { get; set; } = "";
     private DashboardStats Stats { get; set; } = new();
-
     private List<Client> RecentClients { get; set; } = [];
     private List<TaskItem> OpenTasks { get; set; } = [];
+    private List<Invoice> DueInvoices { get; set; } = [];
+
+    private string FocusTitle => Stats.OverdueInvoices > 0
+        ? "Tagih invoice overdue dulu"
+        : Stats.OpenTasks > 0
+            ? "Selesaikan follow-up prioritas"
+            : "Workspace lagi rapi";
+
+    private string FocusMessage => Stats.OverdueInvoices > 0
+        ? "Ada invoice lewat jatuh tempo. Kirim reminder pembayaran dan update status setelah client konfirmasi."
+        : Stats.OpenTasks > 0
+            ? "Mulai dari task dengan prioritas tinggi dan proposal yang sudah dikirim agar pipeline tetap bergerak."
+            : "Belum ada pekerjaan mendesak. Tambah client, invoice, atau proposal baru untuk menjaga alur admin tetap tercatat.";
+
+    private string FocusBadgeText => Stats.OverdueInvoices > 0 ? "Urgent" : Stats.OpenTasks > 0 ? "Active" : "Clear";
+
+    private string FocusBadgeTone => Stats.OverdueInvoices > 0 ? "danger" : Stats.OpenTasks > 0 ? "warning" : "success";
 
     protected override async Task OnInitializedAsync()
     {
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
         var user = authState.User;
-
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
-        UserEmail = user.FindFirstValue(ClaimTypes.Email) ?? user.Identity?.Name ?? "";
 
         if (string.IsNullOrWhiteSpace(userId))
         {
@@ -195,19 +206,49 @@
 
         BusinessName = business.Name;
 
-        Stats.TotalRevenue = await Db.Invoices
-            .Where(x => x.BusinessId == business.Id)
+        var openInvoiceStatuses = new[]
+        {
+            InvoiceStatus.Draft,
+            InvoiceStatus.Sent,
+            InvoiceStatus.Overdue
+        };
+
+        Stats.PaidRevenue = await Db.Invoices
+            .Where(x => x.BusinessId == business.Id && x.Status == InvoiceStatus.Paid)
             .SumAsync(x => x.Total);
 
-        Stats.TotalClients = await Db.Clients
+        Stats.Receivables = await Db.Invoices
+            .Where(x => x.BusinessId == business.Id && openInvoiceStatuses.Contains(x.Status))
+            .SumAsync(x => x.Total);
+
+        Stats.ActiveClients = await Db.Clients
             .Where(x => x.BusinessId == business.Id && !x.IsArchived)
             .CountAsync();
 
+        Stats.PipelineValue = await Db.Clients
+            .Where(x =>
+                x.BusinessId == business.Id &&
+                !x.IsArchived &&
+                x.Status != ClientStatus.Completed &&
+                x.Status != ClientStatus.Lost)
+            .SumAsync(x => x.EstimatedValue);
+
         Stats.PendingInvoices = await Db.Invoices
+            .Where(x => x.BusinessId == business.Id && openInvoiceStatuses.Contains(x.Status))
+            .CountAsync();
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        Stats.OverdueInvoices = await Db.Invoices
             .Where(x =>
                 x.BusinessId == business.Id &&
                 x.Status != InvoiceStatus.Paid &&
-                x.Status != InvoiceStatus.Cancelled)
+                x.Status != InvoiceStatus.Cancelled &&
+                x.DueDate < today)
+            .CountAsync();
+
+        Stats.ProposalsSent = await Db.Proposals
+            .Where(x => x.BusinessId == business.Id && x.Status == ProposalStatus.Sent)
             .CountAsync();
 
         Stats.OpenTasks = await Db.TaskItems
@@ -224,6 +265,17 @@
             .Take(5)
             .ToListAsync();
 
+        DueInvoices = await Db.Invoices
+            .AsNoTracking()
+            .Include(x => x.Client)
+            .Where(x =>
+                x.BusinessId == business.Id &&
+                x.Status != InvoiceStatus.Paid &&
+                x.Status != InvoiceStatus.Cancelled)
+            .OrderBy(x => x.DueDate)
+            .Take(5)
+            .ToListAsync();
+
         OpenTasks = await Db.TaskItems
             .AsNoTracking()
             .Include(x => x.Client)
@@ -232,15 +284,71 @@
                 x.Status != TaskItemStatus.Done &&
                 x.Status != TaskItemStatus.Cancelled)
             .OrderBy(x => x.DueDate)
+            .ThenByDescending(x => x.Priority)
             .Take(5)
             .ToListAsync();
     }
 
+    private static string Money(decimal value)
+    {
+        return $"Rp {value:N0}";
+    }
+
+    private static string GetDueLabel(DateOnly? dueDate)
+    {
+        return dueDate is null ? "No due date" : $"due {dueDate.Value:dd MMM yyyy}";
+    }
+
+    private static string GetPriorityTone(TaskPriority priority)
+    {
+        return priority switch
+        {
+            TaskPriority.Urgent => "danger",
+            TaskPriority.High => "warning",
+            TaskPriority.Medium => "info",
+            _ => "neutral"
+        };
+    }
+
+    private static string GetClientStatusLabel(ClientStatus status)
+    {
+        return status switch
+        {
+            ClientStatus.NewLead => "New Lead",
+            ClientStatus.Contacted => "Contacted",
+            ClientStatus.ProposalSent => "Proposal Sent",
+            ClientStatus.Negotiation => "Negotiation",
+            ClientStatus.Deal => "Deal",
+            ClientStatus.Completed => "Completed",
+            ClientStatus.Lost => "Lost",
+            _ => status.ToString()
+        };
+    }
+
+    private static string GetClientStatusTone(ClientStatus status)
+    {
+        return status switch
+        {
+            ClientStatus.NewLead => "neutral",
+            ClientStatus.Contacted => "info",
+            ClientStatus.ProposalSent => "purple",
+            ClientStatus.Negotiation => "warning",
+            ClientStatus.Deal => "success",
+            ClientStatus.Completed => "success",
+            ClientStatus.Lost => "danger",
+            _ => "neutral"
+        };
+    }
+
     private sealed class DashboardStats
     {
-        public decimal TotalRevenue { get; set; }
-        public int TotalClients { get; set; }
+        public decimal PaidRevenue { get; set; }
+        public decimal Receivables { get; set; }
+        public decimal PipelineValue { get; set; }
+        public int ActiveClients { get; set; }
         public int PendingInvoices { get; set; }
+        public int OverdueInvoices { get; set; }
+        public int ProposalsSent { get; set; }
         public int OpenTasks { get; set; }
     }
 }

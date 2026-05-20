@@ -1,0 +1,227 @@
+@page "/invoices/create"
+@layout AppLayout
+@attribute [Authorize]
+@rendermode InteractiveServer
+
+@using System.Security.Claims
+
+@inject AuthenticationStateProvider AuthStateProvider
+@inject CurrentBusinessService CurrentBusinessService
+@inject ClientService ClientService
+@inject InvoiceService InvoiceService
+@inject NavigationManager Navigation
+
+<PageTitle>Create invoice - AutoAdmin</PageTitle>
+
+<PageHeader
+    Kicker="Billing"
+    Title="Create invoice"
+    Description="Buat invoice dengan item, diskon, pajak, dan nomor otomatis berdasarkan prefix workspace.">
+    <Actions>
+        <a class="aa-btn aa-btn-secondary" href="/invoices">Back to invoices</a>
+    </Actions>
+</PageHeader>
+
+@if (!string.IsNullOrWhiteSpace(ErrorMessage))
+{
+    <div class="aa-alert" role="alert">@ErrorMessage</div>
+}
+
+<EditForm Model="Form" OnValidSubmit="CreateInvoice">
+    <DataAnnotationsValidator />
+
+    <section class="aa-split-layout">
+        <article class="aa-panel">
+            <div class="aa-panel-header">
+                <span>Invoice details</span>
+                <h2>Client and dates</h2>
+            </div>
+
+            <div class="aa-form-grid">
+                <div class="aa-form-group">
+                    <label for="invoice-client">Client</label>
+                    <select id="invoice-client" class="aa-input" @bind="Form.ClientId">
+                        <option value="">No client</option>
+                        @foreach (var client in Clients)
+                        {
+                            <option value="@client.Id">@client.Name</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="aa-form-group">
+                    <label for="invoice-status">Status</label>
+                    <InputSelect id="invoice-status" class="aa-input" @bind-Value="Form.Status">
+                        @foreach (var status in Enum.GetValues<InvoiceStatus>())
+                        {
+                            <option value="@status">@status</option>
+                        }
+                    </InputSelect>
+                </div>
+            </div>
+
+            <div class="aa-form-grid">
+                <div class="aa-form-group">
+                    <label for="issue-date">Issue date</label>
+                    <InputDate id="issue-date" class="aa-input" @bind-Value="Form.IssueDate" />
+                </div>
+
+                <div class="aa-form-group">
+                    <label for="due-date">Due date</label>
+                    <InputDate id="due-date" class="aa-input" @bind-Value="Form.DueDate" />
+                </div>
+            </div>
+
+            <div class="aa-form-group">
+                <label for="invoice-notes">Notes</label>
+                <InputTextArea id="invoice-notes" class="aa-input aa-textarea" @bind-Value="Form.Notes" />
+                <ValidationMessage For="() => Form.Notes" />
+            </div>
+        </article>
+
+        <article class="aa-panel">
+            <div class="aa-panel-header aa-panel-header-split">
+                <div>
+                    <span>Line items</span>
+                    <h2>Invoice items</h2>
+                </div>
+
+                <button class="aa-icon-btn" type="button" @onclick="AddItem">Add item</button>
+            </div>
+
+            <div class="aa-line-items">
+                @for (var index = 0; index < Form.Items.Count; index++)
+                {
+                    var item = Form.Items[index];
+                    var itemIndex = index;
+
+                    <div class="aa-line-item">
+                        <div class="aa-form-group aa-line-description">
+                            <label>Description</label>
+                            <InputText class="aa-input" @bind-Value="item.Description" />
+                            <ValidationMessage For="() => item.Description" />
+                        </div>
+
+                        <div class="aa-form-group">
+                            <label>Qty</label>
+                            <InputNumber class="aa-input" @bind-Value="item.Quantity" />
+                            <ValidationMessage For="() => item.Quantity" />
+                        </div>
+
+                        <div class="aa-form-group">
+                            <label>Unit price</label>
+                            <InputNumber class="aa-input" @bind-Value="item.UnitPrice" />
+                            <ValidationMessage For="() => item.UnitPrice" />
+                        </div>
+
+                        <div class="aa-line-total">
+                            <span>Total</span>
+                            <strong>@Money(item.Total)</strong>
+                        </div>
+
+                        <button class="aa-icon-btn danger" type="button" disabled="@(Form.Items.Count == 1)" @onclick="() => RemoveItem(itemIndex)">Remove</button>
+                    </div>
+                }
+            </div>
+
+            <div class="aa-totals">
+                <div>
+                    <span>Subtotal</span>
+                    <strong>@Money(Subtotal)</strong>
+                </div>
+
+                <div class="aa-form-grid">
+                    <div class="aa-form-group">
+                        <label for="discount">Discount</label>
+                        <InputNumber id="discount" class="aa-input" @bind-Value="Form.Discount" />
+                        <ValidationMessage For="() => Form.Discount" />
+                    </div>
+
+                    <div class="aa-form-group">
+                        <label for="tax">Tax</label>
+                        <InputNumber id="tax" class="aa-input" @bind-Value="Form.Tax" />
+                        <ValidationMessage For="() => Form.Tax" />
+                    </div>
+                </div>
+
+                <div class="aa-total-row">
+                    <span>Total</span>
+                    <strong>@Money(Total)</strong>
+                </div>
+            </div>
+
+            <button class="aa-btn aa-btn-primary aa-btn-full" type="submit">Create invoice</button>
+        </article>
+    </section>
+</EditForm>
+
+@code {
+    private Guid? BusinessId { get; set; }
+    private InvoiceFormModel Form { get; set; } = new();
+    private List<Client> Clients { get; set; } = [];
+    private string? ErrorMessage { get; set; }
+
+    private decimal Subtotal => Form.Items.Sum(x => x.Total);
+    private decimal Total => InvoiceService.CalculateTotal(Subtotal, Form.Discount, Form.Tax);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            Navigation.NavigateTo("/login", forceLoad: true);
+            return;
+        }
+
+        BusinessId = await CurrentBusinessService.GetFirstBusinessIdForUserAsync(userId);
+
+        if (BusinessId is null)
+        {
+            Navigation.NavigateTo("/dashboard", forceLoad: true);
+            return;
+        }
+
+        Clients = await ClientService.GetClientsAsync(BusinessId.Value);
+    }
+
+    private void AddItem()
+    {
+        Form.Items.Add(new InvoiceItemFormModel());
+    }
+
+    private void RemoveItem(int index)
+    {
+        if (Form.Items.Count == 1 || index < 0 || index >= Form.Items.Count)
+        {
+            return;
+        }
+
+        Form.Items.RemoveAt(index);
+    }
+
+    private async Task CreateInvoice()
+    {
+        if (BusinessId is null)
+        {
+            ErrorMessage = "Business workspace tidak ditemukan.";
+            return;
+        }
+
+        try
+        {
+            var invoice = await InvoiceService.CreateInvoiceAsync(BusinessId.Value, Form);
+            Navigation.NavigateTo($"/invoices/{invoice.Id}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+    }
+
+    private static string Money(decimal value)
+    {
+        return $"Rp {value:N0}";
+    }
+}

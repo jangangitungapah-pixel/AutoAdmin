@@ -1,4 +1,5 @@
 @page "/clients"
+@layout AppLayout
 @attribute [Authorize]
 @rendermode InteractiveServer
 
@@ -9,237 +10,196 @@
 @inject ClientService ClientService
 @inject NavigationManager Navigation
 
-<PageTitle>Clients — AutoAdmin</PageTitle>
+<PageTitle>Clients - AutoAdmin</PageTitle>
 
-<main class="aa-app">
-    <aside class="aa-sidebar">
-        <a class="aa-app-brand" href="/dashboard">
-            <div class="aa-logo">A</div>
-            <span>AutoAdmin</span>
-        </a>
+<PageHeader
+    Kicker="Client CRM"
+    Title="Clients"
+    Description="Kelola lead, client aktif, nilai peluang, dan catatan follow-up dari satu pipeline.">
+    <Actions>
+        <button class="aa-btn aa-btn-primary" type="button" @onclick="OpenCreateForm">Add client</button>
+    </Actions>
+</PageHeader>
 
-        <nav class="aa-side-nav">
-            <a href="/dashboard">Dashboard</a>
-            <a class="active" href="/clients">Clients</a>
-            <a href="/invoices">Invoices</a>
-            <a href="/proposals">Proposals</a>
-            <a href="/tasks">Tasks</a>
-            <a href="/messages">AI Messages</a>
-            <a href="/settings">Settings</a>
-        </nav>
+<section class="aa-dashboard-grid aa-dashboard-grid-compact">
+    <StatCard Label="Active clients" Value="@Summary.ActiveClients.ToString("N0")" Hint="Tidak termasuk arsip" />
+    <StatCard Label="Pipeline value" Value="@Money(Summary.PipelineValue)" Hint="Estimasi peluang aktif" />
+    <StatCard Label="Deal clients" Value="@Summary.DealClients.ToString("N0")" Hint="Siap dikerjakan" />
+    <StatCard Label="Needs follow-up" Value="@Summary.FollowUpClients.ToString("N0")" Hint="Contacted sampai negotiation" />
+</section>
 
-        <a class="aa-logout" href="/logout">Logout</a>
-    </aside>
+@if (!string.IsNullOrWhiteSpace(SuccessMessage))
+{
+    <div class="aa-success" role="status">@SuccessMessage</div>
+}
 
-    <section class="aa-main">
-        <header class="aa-page-topbar">
-            <div>
-                <span>Client CRM</span>
-                <h1>Clients</h1>
-                <p>Kelola lead, client aktif, status pipeline, dan nilai peluang project.</p>
+@if (!string.IsNullOrWhiteSpace(ErrorMessage))
+{
+    <div class="aa-alert" role="alert">@ErrorMessage</div>
+}
+
+<section class="aa-client-layout">
+    <article class="aa-panel">
+        <div class="aa-filter-row">
+            <input class="aa-input"
+                   placeholder="Search client, company, email, phone..."
+                   @bind="SearchTerm"
+                   @bind:event="oninput" />
+
+            <select class="aa-input" @bind="SelectedStatusText" aria-label="Filter client status">
+                <option value="">All status</option>
+                @foreach (var status in Enum.GetValues<ClientStatus>())
+                {
+                    <option value="@status.ToString()">@GetStatusLabel(status)</option>
+                }
+            </select>
+
+            <button class="aa-btn aa-btn-secondary" type="button" @onclick="LoadClients">Search</button>
+        </div>
+
+        <div class="aa-table-wrap">
+            @if (IsLoading)
+            {
+                <EmptyState Title="Loading clients..." Message="AutoAdmin sedang membaca database." />
+            }
+            else if (ClientList.Count == 0)
+            {
+                <EmptyState Title="Belum ada client" Message="Tambah client pertama supaya pipeline bisnis mulai kebaca.">
+                    <Actions>
+                        <button class="aa-btn aa-btn-primary" type="button" @onclick="OpenCreateForm">Add first client</button>
+                    </Actions>
+                </EmptyState>
+            }
+            else
+            {
+                <table class="aa-table">
+                    <thead>
+                        <tr>
+                            <th>Client</th>
+                            <th>Contact</th>
+                            <th>Status</th>
+                            <th>Value</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var client in ClientList)
+                        {
+                            <tr>
+                                <td>
+                                    <strong>@client.Name</strong>
+                                    <span>@(client.CompanyName ?? "No company")</span>
+                                </td>
+                                <td>
+                                    <strong>@(client.Email ?? "-")</strong>
+                                    <span>@(client.Phone ?? "-")</span>
+                                </td>
+                                <td>
+                                    <StatusBadge Text="@GetStatusLabel(client.Status)" Tone="@GetStatusTone(client.Status)" />
+                                </td>
+                                <td>
+                                    <strong>@Money(client.EstimatedValue)</strong>
+                                    <span>estimated</span>
+                                </td>
+                                <td>
+                                    <div class="aa-row-actions">
+                                        <button class="aa-icon-btn" type="button" @onclick="() => OpenEditForm(client.Id)">Edit</button>
+                                        <button class="aa-icon-btn danger" type="button" @onclick="() => ArchiveClient(client.Id)">Archive</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </article>
+
+    @if (ShowForm)
+    {
+        <article class="aa-panel aa-form-panel">
+            <div class="aa-panel-header aa-panel-header-split">
+                <div>
+                    <span>@(IsEditing ? "Edit client" : "New client")</span>
+                    <h2>@(IsEditing ? "Update client data" : "Add pipeline record")</h2>
+                </div>
+
+                <button class="aa-icon-btn" type="button" @onclick="CloseForm">Close</button>
             </div>
 
-            <button class="aa-btn aa-btn-primary" @onclick="OpenCreateForm">
-                + Add Client
-            </button>
-        </header>
+            <EditForm Model="Form" OnValidSubmit="SaveClient">
+                <DataAnnotationsValidator />
 
-        @if (!string.IsNullOrWhiteSpace(SuccessMessage))
-        {
-            <div class="aa-success">@SuccessMessage</div>
-        }
-
-        @if (!string.IsNullOrWhiteSpace(ErrorMessage))
-        {
-            <div class="aa-alert">@ErrorMessage</div>
-        }
-
-        <section class="aa-client-layout">
-            <article class="aa-panel">
-                <div class="aa-filter-row">
-                    <input class="aa-input"
-                           placeholder="Search client, company, email, phone..."
-                           @bind="SearchTerm"
-                           @bind:event="oninput" />
-
-                    <select class="aa-input" @bind="SelectedStatusText">
-                        <option value="">All Status</option>
-                        @foreach (var status in Enum.GetValues<ClientStatus>())
-                        {
-                            <option value="@status.ToString()">@GetStatusLabel(status)</option>
-                        }
-                    </select>
-
-                    <button class="aa-btn aa-btn-secondary" @onclick="LoadClients">
-                        Search
-                    </button>
+                <div class="aa-form-group">
+                    <label for="client-name">Client name</label>
+                    <InputText id="client-name" class="aa-input" @bind-Value="Form.Name" />
+                    <ValidationMessage For="() => Form.Name" />
                 </div>
 
-                <div class="aa-table-wrap">
-                    @if (IsLoading)
-                    {
-                        <div class="aa-empty-state">
-                            <strong>Loading clients...</strong>
-                            <span>AutoAdmin sedang membaca database.</span>
-                        </div>
-                    }
-                    else if (ClientList.Count == 0)
-                    {
-                        <div class="aa-empty-state">
-                            <strong>Belum ada client</strong>
-                            <span>Tambah client pertama supaya pipeline bisnis mulai kebaca.</span>
-                            <button class="aa-btn aa-btn-primary" @onclick="OpenCreateForm">
-                                Add First Client
-                            </button>
-                        </div>
-                    }
-                    else
-                    {
-                        <table class="aa-table">
-                            <thead>
-                                <tr>
-                                    <th>Client</th>
-                                    <th>Contact</th>
-                                    <th>Status</th>
-                                    <th>Value</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var client in ClientList)
-                                {
-                                    <tr>
-                                        <td>
-                                            <strong>@client.Name</strong>
-                                            <span>@(client.CompanyName ?? "No company")</span>
-                                        </td>
-                                        <td>
-                                            <strong>@(client.Email ?? "-")</strong>
-                                            <span>@(client.Phone ?? "-")</span>
-                                        </td>
-                                        <td>
-                                            <span class="@GetStatusClass(client.Status)">
-                                                @GetStatusLabel(client.Status)
-                                            </span>
-                                        </td>
-                                        <td>
-                                            <strong>Rp @client.EstimatedValue.ToString("N0")</strong>
-                                            <span>estimated</span>
-                                        </td>
-                                        <td>
-                                            <div class="aa-row-actions">
-                                                <button class="aa-icon-btn" @onclick="() => OpenEditForm(client.Id)">
-                                                    Edit
-                                                </button>
-                                                <button class="aa-icon-btn danger" @onclick="() => ArchiveClient(client.Id)">
-                                                    Archive
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    }
+                <div class="aa-form-group">
+                    <label for="company-name">Company name</label>
+                    <InputText id="company-name" class="aa-input" @bind-Value="Form.CompanyName" />
+                    <ValidationMessage For="() => Form.CompanyName" />
                 </div>
-            </article>
 
-            @if (ShowForm)
-            {
-                <article class="aa-panel aa-form-panel">
-                    <div class="aa-panel-header">
-                        <div>
-                            <span>@(IsEditing ? "Edit Client" : "New Client")</span>
-                            <h2>@(IsEditing ? "Update client data" : "Add new client")</h2>
-                        </div>
-
-                        <button class="aa-icon-btn" @onclick="CloseForm">Close</button>
+                <div class="aa-form-grid">
+                    <div class="aa-form-group">
+                        <label for="client-email">Email</label>
+                        <InputText id="client-email" class="aa-input" @bind-Value="Form.Email" />
+                        <ValidationMessage For="() => Form.Email" />
                     </div>
 
-                    <EditForm Model="Form" OnValidSubmit="SaveClient">
-                        <DataAnnotationsValidator />
+                    <div class="aa-form-group">
+                        <label for="client-phone">Phone / WhatsApp</label>
+                        <InputText id="client-phone" class="aa-input" @bind-Value="Form.Phone" />
+                        <ValidationMessage For="() => Form.Phone" />
+                    </div>
+                </div>
 
-                        <div class="aa-form-group">
-                            <label>Client name</label>
-                            <InputText class="aa-input" @bind-Value="Form.Name" />
-                            <ValidationMessage For="() => Form.Name" />
-                        </div>
+                <div class="aa-form-grid">
+                    <div class="aa-form-group">
+                        <label for="client-status">Status</label>
+                        <InputSelect id="client-status" class="aa-input" @bind-Value="Form.Status">
+                            @foreach (var status in Enum.GetValues<ClientStatus>())
+                            {
+                                <option value="@status">@GetStatusLabel(status)</option>
+                            }
+                        </InputSelect>
+                    </div>
 
-                        <div class="aa-form-group">
-                            <label>Company name</label>
-                            <InputText class="aa-input" @bind-Value="Form.CompanyName" />
-                            <ValidationMessage For="() => Form.CompanyName" />
-                        </div>
+                    <div class="aa-form-group">
+                        <label for="client-value">Estimated value</label>
+                        <InputNumber id="client-value" class="aa-input" @bind-Value="Form.EstimatedValue" />
+                        <ValidationMessage For="() => Form.EstimatedValue" />
+                    </div>
+                </div>
 
-                        <div class="aa-form-grid">
-                            <div class="aa-form-group">
-                                <label>Email</label>
-                                <InputText class="aa-input" @bind-Value="Form.Email" />
-                                <ValidationMessage For="() => Form.Email" />
-                            </div>
+                <div class="aa-form-group">
+                    <label for="client-notes">Notes</label>
+                    <InputTextArea id="client-notes" class="aa-input aa-textarea" @bind-Value="Form.Notes" />
+                    <ValidationMessage For="() => Form.Notes" />
+                </div>
 
-                            <div class="aa-form-group">
-                                <label>Phone / WhatsApp</label>
-                                <InputText class="aa-input" @bind-Value="Form.Phone" />
-                                <ValidationMessage For="() => Form.Phone" />
-                            </div>
-                        </div>
-
-                        <div class="aa-form-grid">
-                            <div class="aa-form-group">
-                                <label>Status</label>
-                                <InputSelect class="aa-input" @bind-Value="Form.Status">
-                                    @foreach (var status in Enum.GetValues<ClientStatus>())
-                                    {
-                                        <option value="@status">@GetStatusLabel(status)</option>
-                                    }
-                                </InputSelect>
-                            </div>
-
-                            <div class="aa-form-group">
-                                <label>Estimated value</label>
-                                <InputNumber class="aa-input" @bind-Value="Form.EstimatedValue" />
-                                <ValidationMessage For="() => Form.EstimatedValue" />
-                            </div>
-                        </div>
-
-                        <div class="aa-form-group">
-                            <label>Notes</label>
-                            <InputTextArea class="aa-input aa-textarea" @bind-Value="Form.Notes" />
-                            <ValidationMessage For="() => Form.Notes" />
-                        </div>
-
-                        <button class="aa-btn aa-btn-primary aa-btn-full" type="submit">
-                            @(IsEditing ? "Save Changes" : "Create Client")
-                        </button>
-                    </EditForm>
-                </article>
-            }
-        </section>
-    </section>
-</main>
+                <button class="aa-btn aa-btn-primary aa-btn-full" type="submit">
+                    @(IsEditing ? "Save changes" : "Create client")
+                </button>
+            </EditForm>
+        </article>
+    }
+</section>
 
 @code {
     private Guid? BusinessId { get; set; }
-
     private List<Client> ClientList { get; set; } = [];
-
     private ClientFormModel Form { get; set; } = new();
-
+    private ClientSummary Summary { get; set; } = new();
     private string SearchTerm { get; set; } = string.Empty;
-
     private string SelectedStatusText { get; set; } = string.Empty;
-
     private string? SuccessMessage { get; set; }
-
     private string? ErrorMessage { get; set; }
-
     private bool IsLoading { get; set; } = true;
-
     private bool ShowForm { get; set; }
-
     private bool IsEditing { get; set; }
-
     private Guid? EditingClientId { get; set; }
 
     protected override async Task OnInitializedAsync()
@@ -286,6 +246,17 @@
             BusinessId.Value,
             SearchTerm,
             selectedStatus);
+
+        Summary = new ClientSummary
+        {
+            ActiveClients = ClientList.Count,
+            PipelineValue = ClientList
+                .Where(x => x.Status != ClientStatus.Completed && x.Status != ClientStatus.Lost)
+                .Sum(x => x.EstimatedValue),
+            DealClients = ClientList.Count(x => x.Status == ClientStatus.Deal),
+            FollowUpClients = ClientList.Count(x =>
+                x.Status is ClientStatus.Contacted or ClientStatus.ProposalSent or ClientStatus.Negotiation)
+        };
 
         IsLoading = false;
     }
@@ -404,6 +375,11 @@
         ErrorMessage = null;
     }
 
+    private static string Money(decimal value)
+    {
+        return $"Rp {value:N0}";
+    }
+
     private static string GetStatusLabel(ClientStatus status)
     {
         return status switch
@@ -419,18 +395,26 @@
         };
     }
 
-    private static string GetStatusClass(ClientStatus status)
+    private static string GetStatusTone(ClientStatus status)
     {
         return status switch
         {
-            ClientStatus.NewLead => "aa-badge neutral",
-            ClientStatus.Contacted => "aa-badge info",
-            ClientStatus.ProposalSent => "aa-badge purple",
-            ClientStatus.Negotiation => "aa-badge warning",
-            ClientStatus.Deal => "aa-badge success",
-            ClientStatus.Completed => "aa-badge success",
-            ClientStatus.Lost => "aa-badge danger",
-            _ => "aa-badge neutral"
+            ClientStatus.NewLead => "neutral",
+            ClientStatus.Contacted => "info",
+            ClientStatus.ProposalSent => "purple",
+            ClientStatus.Negotiation => "warning",
+            ClientStatus.Deal => "success",
+            ClientStatus.Completed => "success",
+            ClientStatus.Lost => "danger",
+            _ => "neutral"
         };
+    }
+
+    private sealed class ClientSummary
+    {
+        public int ActiveClients { get; set; }
+        public decimal PipelineValue { get; set; }
+        public int DealClients { get; set; }
+        public int FollowUpClients { get; set; }
     }
 }

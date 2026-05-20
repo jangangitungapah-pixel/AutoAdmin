@@ -1,0 +1,47 @@
+<aside class="aa-sidebar">
+    <a class="aa-app-brand" href="/dashboard" aria-label="AutoAdmin dashboard">
+        <div class="aa-logo" aria-hidden="true">A</div>
+        <div>
+            <strong>AutoAdmin</strong>
+            <span>Business OS</span>
+        </div>
+    </a>
+
+    <nav class="aa-side-nav" aria-label="Main navigation">
+        @foreach (var item in Items)
+        {
+            <a class="@GetNavClass(item.Href)" href="@item.Href">
+                <span>@item.Label</span>
+            </a>
+        }
+    </nav>
+
+    <a class="aa-logout" href="/logout">Logout</a>
+</aside>
+
+@code {
+    [Parameter]
+    public string CurrentPath { get; set; } = "/";
+
+    private static readonly NavigationItem[] Items =
+    [
+        new("Dashboard", "/dashboard"),
+        new("Clients", "/clients"),
+        new("Invoices", "/invoices"),
+        new("Proposals", "/proposals"),
+        new("Tasks", "/tasks"),
+        new("Messages", "/messages"),
+        new("Settings", "/settings")
+    ];
+
+    private string GetNavClass(string href)
+    {
+        var isActive = href == "/dashboard"
+            ? CurrentPath == href
+            : CurrentPath.StartsWith(href, StringComparison.OrdinalIgnoreCase);
+
+        return isActive ? "active" : string.Empty;
+    }
+
+    private sealed record NavigationItem(string Label, string Href);
+}
