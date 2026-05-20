@@ -37,32 +37,32 @@
 
             <div class="aa-form-group">
                 <label>Full name</label>
-                <InputText class="aa-input" @bind-Value="Input.FullName" />
-                <ValidationMessage For="() => Input.FullName" />
+                <InputText class="aa-input" @bind-Value="Input!.FullName" />
+                <ValidationMessage For="() => Input!.FullName" />
             </div>
 
             <div class="aa-form-group">
                 <label>Business name</label>
-                <InputText class="aa-input" @bind-Value="Input.BusinessName" />
-                <ValidationMessage For="() => Input.BusinessName" />
+                <InputText class="aa-input" @bind-Value="Input!.BusinessName" />
+                <ValidationMessage For="() => Input!.BusinessName" />
             </div>
 
             <div class="aa-form-group">
                 <label>Email</label>
-                <InputText class="aa-input" @bind-Value="Input.Email" autocomplete="email" />
-                <ValidationMessage For="() => Input.Email" />
+                <InputText class="aa-input" @bind-Value="Input!.Email" autocomplete="email" />
+                <ValidationMessage For="() => Input!.Email" />
             </div>
 
             <div class="aa-form-group">
                 <label>Password</label>
-                <InputText class="aa-input" type="password" @bind-Value="Input.Password" autocomplete="new-password" />
-                <ValidationMessage For="() => Input.Password" />
+                <InputText class="aa-input" type="password" @bind-Value="Input!.Password" autocomplete="new-password" />
+                <ValidationMessage For="() => Input!.Password" />
             </div>
 
             <div class="aa-form-group">
                 <label>Confirm password</label>
-                <InputText class="aa-input" type="password" @bind-Value="Input.ConfirmPassword" autocomplete="new-password" />
-                <ValidationMessage For="() => Input.ConfirmPassword" />
+                <InputText class="aa-input" type="password" @bind-Value="Input!.ConfirmPassword" autocomplete="new-password" />
+                <ValidationMessage For="() => Input!.ConfirmPassword" />
             </div>
 
             <button class="aa-btn aa-btn-primary aa-btn-full" type="submit">
@@ -81,11 +81,22 @@
     private List<string> Errors { get; set; } = [];
 
     [SupplyParameterFromForm]
-    private RegisterInput Input { get; set; } = new();
+    private RegisterInput? Input { get; set; }
+
+    protected override void OnInitialized()
+    {
+        Input ??= new RegisterInput();
+    }
 
     private async Task RegisterUser()
     {
         Errors.Clear();
+
+        if (Input is null)
+        {
+            Errors.Add("Form register tidak valid.");
+            return;
+        }
 
         var existingUser = await UserManager.FindByEmailAsync(Input.Email);
 
