@@ -1,6 +1,25 @@
 ﻿<Router AppAssembly="typeof(Program).Assembly" NotFoundPage="typeof(Pages.NotFound)">
     <Found Context="routeData">
-        <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)">
+            <NotAuthorized>
+                <main style="min-height: 100vh; display: grid; place-items: center; padding: 2rem;">
+                    <section style="max-width: 520px; text-align: center;">
+                        <h1>Login required</h1>
+                        <p style="color: #6b7280;">
+                            Kamu perlu login dulu untuk membuka halaman ini.
+                        </p>
+                        <a href="/login">Go to login</a>
+                    </section>
+                </main>
+            </NotAuthorized>
+
+            <Authorizing>
+                <main style="min-height: 100vh; display: grid; place-items: center;">
+                    <p>Checking access...</p>
+                </main>
+            </Authorizing>
+        </AuthorizeRouteView>
+
         <FocusOnNavigate RouteData="routeData" Selector="h1" />
     </Found>
 </Router>
