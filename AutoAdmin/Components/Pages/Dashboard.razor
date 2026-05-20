@@ -1,0 +1,246 @@
+@page "/dashboard"
+@attribute [Authorize]
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+@inject AuthenticationStateProvider AuthStateProvider
+@inject AutoAdminDbContext Db
+@inject NavigationManager Navigation
+
+<PageTitle>Dashboard — AutoAdmin</PageTitle>
+
+<main class="aa-app">
+    <aside class="aa-sidebar">
+        <a class="aa-app-brand" href="/dashboard">
+            <div class="aa-logo">A</div>
+            <span>AutoAdmin</span>
+        </a>
+
+        <nav class="aa-side-nav">
+            <a class="active" href="/dashboard">Dashboard</a>
+            <a href="/clients">Clients</a>
+            <a href="/invoices">Invoices</a>
+            <a href="/proposals">Proposals</a>
+            <a href="/tasks">Tasks</a>
+            <a href="/messages">AI Messages</a>
+            <a href="/settings">Settings</a>
+        </nav>
+
+        <a class="aa-logout" href="/logout">Logout</a>
+    </aside>
+
+    <section class="aa-main">
+        <header class="aa-topbar">
+            <div>
+                <span>Workspace</span>
+                <h1>@BusinessName</h1>
+            </div>
+
+            <div class="aa-user-pill">
+                @UserEmail
+            </div>
+        </header>
+
+        <section class="aa-dashboard-grid">
+            <article class="aa-stat-card">
+                <span>Total Revenue</span>
+                <strong>Rp @Stats.TotalRevenue.ToString("N0")</strong>
+                <small>From all invoices</small>
+            </article>
+
+            <article class="aa-stat-card">
+                <span>Clients</span>
+                <strong>@Stats.TotalClients</strong>
+                <small>Active business contacts</small>
+            </article>
+
+            <article class="aa-stat-card">
+                <span>Pending Invoices</span>
+                <strong>@Stats.PendingInvoices</strong>
+                <small>Need attention</small>
+            </article>
+
+            <article class="aa-stat-card">
+                <span>Open Tasks</span>
+                <strong>@Stats.OpenTasks</strong>
+                <small>Follow-up queue</small>
+            </article>
+        </section>
+
+        <section class="aa-content-grid">
+            <article class="aa-panel aa-panel-large">
+                <div class="aa-panel-header">
+                    <div>
+                        <span>Business Copilot</span>
+                        <h2>Today's focus</h2>
+                    </div>
+                </div>
+
+                <div class="aa-copilot-box">
+                    <div class="aa-copilot-icon">✦</div>
+                    <div>
+                        <strong>Recommended action</strong>
+                        <p>
+                            Review invoice pending dan follow-up task yang jatuh tempo.
+                            AutoAdmin akan bantu prioritasin kerja admin harian bisnis lo.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="aa-action-row">
+                    <a class="aa-btn aa-btn-secondary" href="/clients">Manage clients</a>
+                    <a class="aa-btn aa-btn-primary" href="/invoices">Create invoice</a>
+                </div>
+            </article>
+
+            <article class="aa-panel">
+                <div class="aa-panel-header">
+                    <div>
+                        <span>Recent Clients</span>
+                        <h2>Latest contacts</h2>
+                    </div>
+                </div>
+
+                <div class="aa-list">
+                    @if (RecentClients.Count == 0)
+                    {
+                        <p class="aa-muted">Belum ada client.</p>
+                    }
+                    else
+                    {
+                        @foreach (var client in RecentClients)
+                        {
+                            <div class="aa-list-item">
+                                <div>
+                                    <strong>@client.Name</strong>
+                                    <span>@(client.CompanyName ?? client.Email ?? "No detail")</span>
+                                </div>
+                                <small>@client.Status</small>
+                            </div>
+                        }
+                    }
+                </div>
+            </article>
+
+            <article class="aa-panel">
+                <div class="aa-panel-header">
+                    <div>
+                        <span>Open Tasks</span>
+                        <h2>Follow-up queue</h2>
+                    </div>
+                </div>
+
+                <div class="aa-list">
+                    @if (OpenTasks.Count == 0)
+                    {
+                        <p class="aa-muted">Tidak ada task terbuka.</p>
+                    }
+                    else
+                    {
+                        @foreach (var task in OpenTasks)
+                        {
+                            <div class="aa-list-item">
+                                <div>
+                                    <strong>@task.Title</strong>
+                                    <span>@(task.Client?.Name ?? "General task")</span>
+                                </div>
+                                <small>@task.Priority</small>
+                            </div>
+                        }
+                    }
+                </div>
+            </article>
+        </section>
+    </section>
+</main>
+
+@code {
+    private string BusinessName { get; set; } = "AutoAdmin";
+    private string UserEmail { get; set; } = "";
+    private DashboardStats Stats { get; set; } = new();
+
+    private List<Client> RecentClients { get; set; } = [];
+    private List<TaskItem> OpenTasks { get; set; } = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+        UserEmail = user.FindFirstValue(ClaimTypes.Email) ?? user.Identity?.Name ?? "";
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            Navigation.NavigateTo("/login", forceLoad: true);
+            return;
+        }
+
+        var business = await Db.Businesses
+            .FirstOrDefaultAsync(x => x.OwnerId == userId);
+
+        if (business is null)
+        {
+            business = new Business
+            {
+                OwnerId = userId,
+                Name = "My Business",
+                Industry = "UMKM / Freelancer",
+                Currency = "IDR",
+                InvoicePrefix = "INV"
+            };
+
+            Db.Businesses.Add(business);
+            await Db.SaveChangesAsync();
+        }
+
+        BusinessName = business.Name;
+
+        Stats.TotalRevenue = await Db.Invoices
+            .Where(x => x.BusinessId == business.Id)
+            .SumAsync(x => x.Total);
+
+        Stats.TotalClients = await Db.Clients
+            .Where(x => x.BusinessId == business.Id && !x.IsArchived)
+            .CountAsync();
+
+        Stats.PendingInvoices = await Db.Invoices
+            .Where(x =>
+                x.BusinessId == business.Id &&
+                x.Status != InvoiceStatus.Paid &&
+                x.Status != InvoiceStatus.Cancelled)
+            .CountAsync();
+
+        Stats.OpenTasks = await Db.TaskItems
+            .Where(x =>
+                x.BusinessId == business.Id &&
+                x.Status != TaskItemStatus.Done &&
+                x.Status != TaskItemStatus.Cancelled)
+            .CountAsync();
+
+        RecentClients = await Db.Clients
+            .AsNoTracking()
+            .Where(x => x.BusinessId == business.Id && !x.IsArchived)
+            .OrderByDescending(x => x.CreatedAtUtc)
+            .Take(5)
+            .ToListAsync();
+
+        OpenTasks = await Db.TaskItems
+            .AsNoTracking()
+            .Include(x => x.Client)
+            .Where(x =>
+                x.BusinessId == business.Id &&
+                x.Status != TaskItemStatus.Done &&
+                x.Status != TaskItemStatus.Cancelled)
+            .OrderBy(x => x.DueDate)
+            .Take(5)
+            .ToListAsync();
+    }
+
+    private sealed class DashboardStats
+    {
+        public decimal TotalRevenue { get; set; }
+        public int TotalClients { get; set; }
+        public int PendingInvoices { get; set; }
+        public int OpenTasks { get; set; }
+    }
+}

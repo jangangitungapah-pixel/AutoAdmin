@@ -1,0 +1,153 @@
+﻿@page "/register"
+@using System.ComponentModel.DataAnnotations
+@inject UserManager<AppUser> UserManager
+@inject SignInManager<AppUser> SignInManager
+@inject AutoAdminDbContext Db
+@inject NavigationManager Navigation
+
+<PageTitle>Register — AutoAdmin</PageTitle>
+
+<main class="aa-auth-shell">
+    <section class="aa-auth-card">
+        <div class="aa-brand-row">
+            <div class="aa-logo">A</div>
+            <div>
+                <strong>AutoAdmin</strong>
+                <span>Create business workspace</span>
+            </div>
+        </div>
+
+        <div class="aa-auth-header">
+            <h1>Create account</h1>
+            <p>Bikin akun dan workspace bisnis pertama lo.</p>
+        </div>
+
+        @if (Errors.Count > 0)
+        {
+            <div class="aa-alert">
+                @foreach (var error in Errors)
+                {
+                    <div>@error</div>
+                }
+            </div>
+        }
+
+        <EditForm Model="Input" FormName="register" method="post" OnValidSubmit="RegisterUser">
+            <DataAnnotationsValidator />
+
+            <div class="aa-form-group">
+                <label>Full name</label>
+                <InputText class="aa-input" @bind-Value="Input.FullName" />
+                <ValidationMessage For="() => Input.FullName" />
+            </div>
+
+            <div class="aa-form-group">
+                <label>Business name</label>
+                <InputText class="aa-input" @bind-Value="Input.BusinessName" />
+                <ValidationMessage For="() => Input.BusinessName" />
+            </div>
+
+            <div class="aa-form-group">
+                <label>Email</label>
+                <InputText class="aa-input" @bind-Value="Input.Email" autocomplete="email" />
+                <ValidationMessage For="() => Input.Email" />
+            </div>
+
+            <div class="aa-form-group">
+                <label>Password</label>
+                <InputText class="aa-input" type="password" @bind-Value="Input.Password" autocomplete="new-password" />
+                <ValidationMessage For="() => Input.Password" />
+            </div>
+
+            <div class="aa-form-group">
+                <label>Confirm password</label>
+                <InputText class="aa-input" type="password" @bind-Value="Input.ConfirmPassword" autocomplete="new-password" />
+                <ValidationMessage For="() => Input.ConfirmPassword" />
+            </div>
+
+            <button class="aa-btn aa-btn-primary aa-btn-full" type="submit">
+                Create account
+            </button>
+        </EditForm>
+
+        <p class="aa-auth-switch">
+            Sudah punya akun?
+            <a href="/login">Login</a>
+        </p>
+    </section>
+</main>
+
+@code {
+    private List<string> Errors { get; set; } = [];
+
+    [SupplyParameterFromForm]
+    private RegisterInput Input { get; set; } = new();
+
+    private async Task RegisterUser()
+    {
+        Errors.Clear();
+
+        var existingUser = await UserManager.FindByEmailAsync(Input.Email);
+
+        if (existingUser is not null)
+        {
+            Errors.Add("Email ini sudah terdaftar.");
+            return;
+        }
+
+        var user = new AppUser
+        {
+            UserName = Input.Email,
+            Email = Input.Email,
+            EmailConfirmed = true,
+            FullName = Input.FullName.Trim()
+        };
+
+        var result = await UserManager.CreateAsync(user, Input.Password);
+
+        if (!result.Succeeded)
+        {
+            Errors.AddRange(result.Errors.Select(error => error.Description));
+            return;
+        }
+
+        var business = new Business
+        {
+            OwnerId = user.Id,
+            Name = Input.BusinessName.Trim(),
+            Industry = "UMKM / Freelancer",
+            Currency = "IDR",
+            InvoicePrefix = "INV"
+        };
+
+        Db.Businesses.Add(business);
+        await Db.SaveChangesAsync();
+
+        await SignInManager.SignInAsync(user, isPersistent: false);
+
+        Navigation.NavigateTo("/dashboard", forceLoad: true);
+    }
+
+    private sealed class RegisterInput
+    {
+        [Required(ErrorMessage = "Nama wajib diisi.")]
+        [MaxLength(120)]
+        public string FullName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Nama bisnis wajib diisi.")]
+        [MaxLength(160)]
+        public string BusinessName { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Email wajib diisi.")]
+        [EmailAddress(ErrorMessage = "Format email tidak valid.")]
+        public string Email { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Password wajib diisi.")]
+        [MinLength(8, ErrorMessage = "Password minimal 8 karakter.")]
+        public string Password { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Konfirmasi password wajib diisi.")]
+        [Compare(nameof(Password), ErrorMessage = "Konfirmasi password tidak sama.")]
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
+}

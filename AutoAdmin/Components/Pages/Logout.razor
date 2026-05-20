@@ -1,0 +1,15 @@
+﻿@page "/logout"
+@inject SignInManager<AppUser> SignInManager
+@inject NavigationManager Navigation
+
+<PageTitle>Logout — AutoAdmin</PageTitle>
+
+<p>Logging out...</p>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        await SignInManager.SignOutAsync();
+        Navigation.NavigateTo("/", forceLoad: true);
+    }
+}

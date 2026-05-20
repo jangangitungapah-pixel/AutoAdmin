@@ -1,0 +1,111 @@
+﻿@page "/login"
+@using System.ComponentModel.DataAnnotations
+@inject SignInManager<AppUser> SignInManager
+@inject NavigationManager Navigation
+
+<PageTitle>Login — AutoAdmin</PageTitle>
+
+<main class="aa-auth-shell">
+    <section class="aa-auth-card">
+        <div class="aa-brand-row">
+            <div class="aa-logo">A</div>
+            <div>
+                <strong>AutoAdmin</strong>
+                <span>Login to your workspace</span>
+            </div>
+        </div>
+
+        <div class="aa-auth-header">
+            <h1>Welcome back</h1>
+            <p>Masuk untuk lanjut mengelola bisnis lo.</p>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(ErrorMessage))
+        {
+            <div class="aa-alert">@ErrorMessage</div>
+        }
+
+        <EditForm Model="Input" FormName="login" method="post" OnValidSubmit="LoginUser">
+            <DataAnnotationsValidator />
+
+            <div class="aa-form-group">
+                <label>Email</label>
+                <InputText class="aa-input" @bind-Value="Input.Email" autocomplete="email" />
+                <ValidationMessage For="() => Input.Email" />
+            </div>
+
+            <div class="aa-form-group">
+                <label>Password</label>
+                <InputText class="aa-input" type="password" @bind-Value="Input.Password" autocomplete="current-password" />
+                <ValidationMessage For="() => Input.Password" />
+            </div>
+
+            <label class="aa-check">
+                <InputCheckbox @bind-Value="Input.RememberMe" />
+                <span>Remember me</span>
+            </label>
+
+            <button class="aa-btn aa-btn-primary aa-btn-full" type="submit">
+                Login
+            </button>
+        </EditForm>
+
+        <p class="aa-auth-switch">
+            Belum punya akun?
+            <a href="/register">Create account</a>
+        </p>
+
+        <div class="aa-demo-box">
+            <span>Demo account</span>
+            <strong>demo@autoadmin.local</strong>
+            <small>Password: Demo123!</small>
+        </div>
+    </section>
+</main>
+
+@code {
+    private string? ErrorMessage;
+
+    [SupplyParameterFromForm]
+    private LoginInput Input { get; set; } = new();
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    private async Task LoginUser()
+    {
+        ErrorMessage = null;
+
+        var result = await SignInManager.PasswordSignInAsync(
+            Input.Email,
+            Input.Password,
+            Input.RememberMe,
+            lockoutOnFailure: true);
+
+        if (result.Succeeded)
+        {
+            Navigation.NavigateTo(ReturnUrl ?? "/dashboard", forceLoad: true);
+            return;
+        }
+
+        if (result.IsLockedOut)
+        {
+            ErrorMessage = "Akun sementara terkunci karena terlalu banyak percobaan login.";
+            return;
+        }
+
+        ErrorMessage = "Email atau password salah.";
+    }
+
+    private sealed class LoginInput
+    {
+        [Required(ErrorMessage = "Email wajib diisi.")]
+        [EmailAddress(ErrorMessage = "Format email tidak valid.")]
+        public string Email { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "Password wajib diisi.")]
+        public string Password { get; set; } = string.Empty;
+
+        public bool RememberMe { get; set; }
+    }
+}
