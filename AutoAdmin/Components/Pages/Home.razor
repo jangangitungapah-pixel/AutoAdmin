@@ -1,7 +1,316 @@
 ﻿@page "/"
 
-<PageTitle>Home</PageTitle>
+<PageTitle>AutoAdmin — AI Business Dashboard</PageTitle>
 
-<h1>Hello, world!</h1>
+<main class="aa-page">
+    <section class="aa-hero">
+        <div class="aa-noise"></div>
+        <div class="aa-orb aa-orb-one"></div>
+        <div class="aa-orb aa-orb-two"></div>
 
-Welcome to your new app.
+        <nav class="aa-navbar">
+            <a class="aa-brand" href="/">
+                <span class="aa-brand-mark">A</span>
+                <span>AutoAdmin</span>
+            </a>
+
+            <div class="aa-navlinks">
+                <a href="#features">Features</a>
+                <a href="#workflow">Workflow</a>
+                <a href="#pricing">Pricing</a>
+            </div>
+
+            <a class="aa-nav-cta" href="/dashboard">Open Demo</a>
+        </nav>
+
+        <div class="aa-hero-grid">
+            <div class="aa-hero-copy">
+                <div class="aa-pill">
+                    <span class="aa-pulse"></span>
+                    AI-powered admin dashboard for modern business
+                </div>
+
+                <h1>
+                    Kelola klien, invoice, proposal, dan follow-up
+                    <span>tanpa admin chaos.</span>
+                </h1>
+
+                <p class="aa-hero-text">
+                    AutoAdmin membantu freelancer dan UMKM merapikan operasional bisnis:
+                    dari tracking klien, invoice, pesan follow-up, sampai insight pemasukan —
+                    semuanya dalam satu dashboard modern.
+                </p>
+
+                <div class="aa-hero-actions">
+                    <a class="aa-btn aa-btn-primary" href="/dashboard">
+                        Coba Dashboard
+                        <span>→</span>
+                    </a>
+
+                    <a class="aa-btn aa-btn-ghost" href="#features">
+                        Lihat Fitur
+                    </a>
+                </div>
+
+                <div class="aa-trust-row">
+                    <div>
+                        <strong>3.8x</strong>
+                        <span>faster follow-up</span>
+                    </div>
+                    <div>
+                        <strong>92%</strong>
+                        <span>invoice visibility</span>
+                    </div>
+                    <div>
+                        <strong>24/7</strong>
+                        <span>business clarity</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="aa-dashboard-shell">
+                <div class="aa-dashboard-card">
+                    <div class="aa-window-bar">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+
+                    <div class="aa-app-preview">
+                        <aside class="aa-preview-sidebar">
+                            <div class="aa-mini-logo"></div>
+                            <div class="aa-side-line active"></div>
+                            <div class="aa-side-line"></div>
+                            <div class="aa-side-line"></div>
+                            <div class="aa-side-line"></div>
+                        </aside>
+
+                        <section class="aa-preview-main">
+                            <div class="aa-preview-header">
+                                <div>
+                                    <span>Business Overview</span>
+                                    <strong>Rp 48.750.000</strong>
+                                </div>
+                                <button>AI Insight</button>
+                            </div>
+
+                            <div class="aa-stat-grid">
+                                <div class="aa-mini-stat">
+                                    <span>Clients</span>
+                                    <strong>128</strong>
+                                </div>
+                                <div class="aa-mini-stat">
+                                    <span>Paid</span>
+                                    <strong>76%</strong>
+                                </div>
+                                <div class="aa-mini-stat glow">
+                                    <span>Due</span>
+                                    <strong>9</strong>
+                                </div>
+                            </div>
+
+                            <div class="aa-chart">
+                                <span style="height:45%"></span>
+                                <span style="height:72%"></span>
+                                <span style="height:52%"></span>
+                                <span style="height:88%"></span>
+                                <span style="height:64%"></span>
+                                <span style="height:96%"></span>
+                                <span style="height:78%"></span>
+                            </div>
+
+                            <div class="aa-ai-card">
+                                <div class="aa-ai-icon">✦</div>
+                                <div>
+                                    <strong>Smart suggestion</strong>
+                                    <p>Kirim reminder ke 3 klien yang invoice-nya hampir overdue.</p>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+
+                <div class="aa-floating-card aa-floating-one">
+                    <strong>Invoice paid</strong>
+                    <span>+ Rp 6.500.000</span>
+                </div>
+
+                <div class="aa-floating-card aa-floating-two">
+                    <strong>Lead converted</strong>
+                    <span>Studio Musik 37</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="aa-section aa-problem">
+        <div class="aa-section-heading">
+            <span class="aa-eyebrow">The problem</span>
+            <h2>Bisnis kecil sering bukan kalah skill, tapi kalah rapi.</h2>
+            <p>
+                Chat tercecer, invoice lupa, follow-up kelewat, data klien nyampur,
+                akhirnya peluang bagus sering lewat begitu aja.
+            </p>
+        </div>
+
+        <div class="aa-problem-grid">
+            @foreach (var item in Problems)
+            {
+                <article class="aa-problem-card">
+                    <span>@item.Icon</span>
+                    <h3>@item.Title</h3>
+                    <p>@item.Description</p>
+                </article>
+            }
+        </div>
+    </section>
+
+    <section id="features" class="aa-section">
+        <div class="aa-section-heading">
+            <span class="aa-eyebrow">Core features</span>
+            <h2>Satu dashboard buat semua urusan admin bisnis.</h2>
+            <p>
+                Dibangun untuk freelancer, vendor jasa, studio, servis komputer,
+                konsultan, creator, dan UMKM modern.
+            </p>
+        </div>
+
+        <div class="aa-feature-grid">
+            @foreach (var feature in Features)
+            {
+                <article class="aa-feature-card">
+                    <div class="aa-feature-icon">@feature.Icon</div>
+                    <h3>@feature.Title</h3>
+                    <p>@feature.Description</p>
+                    <a href="/dashboard">Explore feature →</a>
+                </article>
+            }
+        </div>
+    </section>
+
+    <section id="workflow" class="aa-section aa-workflow">
+        <div class="aa-section-heading">
+            <span class="aa-eyebrow">Workflow</span>
+            <h2>Dari lead masuk sampai invoice lunas.</h2>
+            <p>
+                AutoAdmin dibuat bukan cuma buat dilihat, tapi buat ngikutin alur kerja bisnis jasa beneran.
+            </p>
+        </div>
+
+        <div class="aa-timeline">
+            @foreach (var step in Workflow)
+            {
+                <article class="aa-timeline-item">
+                    <span>@step.Number</span>
+                    <div>
+                        <h3>@step.Title</h3>
+                        <p>@step.Description</p>
+                    </div>
+                </article>
+            }
+        </div>
+    </section>
+
+    <section id="pricing" class="aa-section">
+        <div class="aa-section-heading">
+            <span class="aa-eyebrow">Pricing preview</span>
+            <h2>Siap terlihat seperti SaaS beneran.</h2>
+            <p>
+                Untuk portfolio, pricing ini bikin produk terlihat serius, lengkap, dan siap dikembangkan.
+            </p>
+        </div>
+
+        <div class="aa-pricing-grid">
+            <article class="aa-price-card">
+                <span>Starter</span>
+                <h3>Free</h3>
+                <p>Untuk freelancer yang baru mulai merapikan bisnis.</p>
+                <ul>
+                    <li>Client tracker</li>
+                    <li>Basic invoice list</li>
+                    <li>Follow-up template</li>
+                </ul>
+                <a href="/dashboard">Start Free</a>
+            </article>
+
+            <article class="aa-price-card featured">
+                <span>Pro</span>
+                <h3>Rp 79k</h3>
+                <p>Untuk bisnis kecil yang butuh workflow admin lebih cepat.</p>
+                <ul>
+                    <li>AI message generator</li>
+                    <li>Proposal builder</li>
+                    <li>Revenue insight</li>
+                    <li>Smart reminder</li>
+                </ul>
+                <a href="/dashboard">Try Pro</a>
+            </article>
+
+            <article class="aa-price-card">
+                <span>Business</span>
+                <h3>Custom</h3>
+                <p>Untuk studio, vendor, dan tim kecil dengan kebutuhan lebih serius.</p>
+                <ul>
+                    <li>Team dashboard</li>
+                    <li>Advanced reports</li>
+                    <li>Custom workflow</li>
+                </ul>
+                <a href="/dashboard">Contact Sales</a>
+            </article>
+        </div>
+    </section>
+
+    <section class="aa-final-cta">
+        <div>
+            <span class="aa-eyebrow">AutoAdmin</span>
+            <h2>Rapihin bisnis lo sebelum makin rame.</h2>
+            <p>
+                Mulai dari dashboard demo, lalu kita upgrade pelan-pelan jadi aplikasi bisnis yang benar-benar interaktif.
+            </p>
+        </div>
+
+        <a class="aa-btn aa-btn-primary" href="/dashboard">
+            Open Dashboard
+            <span>→</span>
+        </a>
+    </section>
+
+    <footer class="aa-footer">
+        <p>© 2026 AutoAdmin. Built for modern UMKM & freelancers.</p>
+        <div>
+            <a href="#features">Features</a>
+            <a href="#pricing">Pricing</a>
+            <a href="/dashboard">Demo</a>
+        </div>
+    </footer>
+</main>
+
+@code {
+    private readonly List<InfoItem> Problems =
+    [
+        new("💬", "Chat klien berantakan", "Data project, harga, revisi, dan deadline sering tenggelam di WhatsApp."),
+        new("🧾", "Invoice lupa difollow-up", "Pembayaran telat bukan selalu karena klien jahat, kadang karena reminder-nya kelewat."),
+        new("📉", "Nggak tahu bisnis sehat atau nggak", "Pemasukan ada, tapi insight cashflow dan pipeline masih gelap.")
+    ];
+
+    private readonly List<InfoItem> Features =
+    [
+        new("🧠", "AI Business Copilot", "Rekomendasi tindakan harian: follow-up, reminder invoice, dan peluang klien."),
+        new("👥", "Client CRM", "Kelola lead, status deal, nilai project, catatan, dan riwayat komunikasi klien."),
+        new("🧾", "Smart Invoice", "Buat invoice modern dengan status paid, sent, overdue, dan draft."),
+        new("✍️", "Proposal Builder", "Susun proposal jasa yang rapi, cepat, dan siap dikirim ke calon klien."),
+        new("⚡", "Message Generator", "Generate pesan follow-up, reminder pembayaran, dan penawaran jasa."),
+        new("📊", "Revenue Insight", "Pantau performa pemasukan, invoice pending, dan health score bisnis.")
+    ];
+
+    private readonly List<WorkflowItem> Workflow =
+    [
+        new("01", "Tambah klien", "Masukkan calon klien, kebutuhan, nilai project, dan status pipeline."),
+        new("02", "Generate proposal", "Susun scope kerja, timeline, harga, dan deliverables dengan format profesional."),
+        new("03", "Kirim invoice", "Track invoice dari draft, sent, paid, sampai overdue."),
+        new("04", "Follow-up otomatis", "Gunakan template AI untuk follow-up tanpa terdengar maksa.")
+    ];
+
+    private record InfoItem(string Icon, string Title, string Description);
+    private record WorkflowItem(string Number, string Title, string Description);
+}
